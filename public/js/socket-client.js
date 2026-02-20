@@ -1,0 +1,2 @@
+// Logic temporarily mapped in main.js, WebRTC interop makes it complex to detach IO handlers from the closures without refactoring variables, which is disallowed. We export the socket instance here.
+export const getSocket = () => window.socket;
