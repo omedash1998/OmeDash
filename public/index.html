@@ -10,6 +10,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#e6f7ff">
     <title>Video Chat MVP</title>
+    <link rel="icon" href="data:,">
     <style>
         * {
             box-sizing: border-box;
@@ -879,6 +880,280 @@
         .btn-primary:hover {
             transform: translateY(-1px);
             box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ===== REPORT MODAL ===== */
+        .report-modal-body {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .report-reason-btn {
+            width: 100%;
+            padding: 14px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 12px;
+            border: 2px solid rgba(3, 102, 214, 0.12);
+            background: linear-gradient(180deg, #f8fbff 0%, #f0f5fa 100%);
+            color: #083e6a;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+
+        .report-reason-btn:hover {
+            border-color: rgba(59, 130, 246, 0.35);
+            background: linear-gradient(180deg, #eef5ff 0%, #e6effa 100%);
+            transform: translateY(-1px);
+        }
+
+        .report-reason-btn.selected {
+            border-color: #3b82f6;
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        .report-reason-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Toast notification */
+        .report-toast {
+            position: fixed;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: linear-gradient(135deg, rgba(8, 47, 73, 0.92), rgba(15, 23, 42, 0.95));
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 9999;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
+
+        .report-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Full-screen ban overlay */
+        .ban-fullscreen {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(20px);
+            z-index: 99999;
+            flex-direction: column;
+        }
+
+        .ban-message {
+            text-align: center;
+            color: #fff;
+            max-width: 400px;
+            padding: 40px;
+        }
+
+        .ban-message h2 {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 12px 0;
+            color: #ff6b6b;
+        }
+
+        .ban-message p {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        /* Temporary ban overlay with countdown */
+        .tempban-fullscreen {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(8, 15, 30, 0.92);
+            backdrop-filter: blur(24px);
+            z-index: 99999;
+            flex-direction: column;
+        }
+
+        .tempban-card {
+            text-align: center;
+            max-width: 420px;
+            padding: 40px 32px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+        }
+
+        .tempban-card h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 0 0 6px 0;
+            color: #fbbf24;
+        }
+
+        .tempban-card .tempban-sub {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.55);
+            margin: 0 0 24px 0;
+            line-height: 1.4;
+        }
+
+        .countdown-row {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .countdown-unit {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .countdown-digit {
+            width: 64px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 800;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .countdown-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tempban-pay-section {
+            margin-top: 8px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .tempban-pay-section p {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.45);
+            margin: 0 0 10px 0;
+        }
+
+        /* Full-screen payment overlay (sexual / bad_behavior bans) */
+        .payment-fullscreen {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(8, 15, 30, 0.92);
+            backdrop-filter: blur(24px);
+            z-index: 99999;
+            flex-direction: column;
+        }
+
+        .payment-card {
+            text-align: center;
+            max-width: 420px;
+            padding: 40px 32px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.03) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(12px);
+        }
+
+        .payment-card h2 {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 0 0 6px 0;
+            color: #fff;
+        }
+
+        .payment-card .payment-sub {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.55);
+            margin: 0 0 20px 0;
+            line-height: 1.4;
+        }
+
+        .payment-price {
+            font-size: 32px;
+            font-weight: 800;
+            color: #fff;
+            margin: 0 0 4px 0;
+        }
+
+        .payment-price-label {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
+            margin: 0 0 24px 0;
+        }
+
+        .payment-pay-btn {
+            width: 100%;
+            padding: 14px 24px;
+            font-size: 16px;
+            font-weight: 700;
+            border-radius: 12px;
+            border: none;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 6px 24px rgba(59, 130, 246, 0.35);
+            transition: all 0.2s ease;
+        }
+
+        .payment-pay-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 32px rgba(59, 130, 246, 0.45);
+        }
+
+        .payment-pay-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .payment-contact {
+            margin-top: 16px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .payment-contact a {
+            color: #93c5fd;
         }
 
 
@@ -1962,6 +2237,25 @@
                 display: none !important;
             }
 
+            /* Mobile-only connection status badge */
+            #mobileStatusBadge {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                color: #ffffff;
+                font-size: 13px;
+                font-weight: 600;
+                z-index: 10;
+                pointer-events: none;
+                transition: opacity 0.3s ease, transform 0.3s ease;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            }
+
+            #mobileStatusBadge.fade-out {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
             /* Controls panel mobile layout */
             .panel-card {
                 padding: 12px;
@@ -2625,6 +2919,8 @@
         <div id="videos">
             <div>
                 <video id="localVideo" autoplay playsinline muted width="320"></video>
+                <!-- Mobile-only connection status badge -->
+                <div id="mobileStatusBadge" style="display:none;">Searching partner...</div>
             </div>
             <div class="partner-video">
                 <!-- Starfield background -->
@@ -2642,24 +2938,81 @@
             </div>
         </div>
 
-        <!-- Ban Modal -->
-        <div id="banModal" class="modal-overlay" aria-hidden="true">
-            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="banTitle">
-                <h3 id="banTitle">Account Banned</h3>
-                <p style="margin:6px 0 8px;color:#4b6a86;font-size:13px;">You have been banned for inappropriate
-                    behavior.</p>
-                <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;">
-                    <div style="font-size:16px;color:#083e6a;font-weight:700;">Unban Fee: $7.99</div>
-                    <div style="color:#4b6a86;">Pay to restore access immediately. (Payment flow not implemented in this
-                        demo.)</div>
-                    <div id="banTimer" style="margin-top:6px;color:#d23b3b;font-weight:700;">Time remaining:
-                        calculating...</div>
+        <!-- Report Modal -->
+        <div id="reportModal" class="modal-overlay" aria-hidden="true" style="display:none; z-index:3010;">
+            <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+                <h3 id="reportTitle" style="margin:0;color:#083e6a;">Report User</h3>
+                <p style="margin:6px 0 8px;color:#4b6a86;font-size:13px;">Select a reason for reporting this user:</p>
+                <div class="report-modal-body">
+                    <button class="report-reason-btn" data-reason="minor">🚸 Report Minor</button>
+                    <button class="report-reason-btn" data-reason="sexual">⚠️ Report Sexual Behavior</button>
+                    <button class="report-reason-btn" data-reason="bad_behavior">🚫 Report Bad Behavior</button>
                 </div>
                 <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-                    <button id="unbanBtn" class="btn-primary">Unban $7.99</button>
+                    <button id="reportCancelBtn" class="btn-ghost">Cancel</button>
+                    <button id="reportConfirmBtn" class="btn-primary" disabled>Confirm Report</button>
                 </div>
             </div>
         </div>
+
+        <!-- Ban Fullscreen Lock Overlay (minor — permanent) -->
+        <div id="banOverlay" class="ban-fullscreen" style="display:none;">
+            <div class="ban-message">
+                <h2>Your account has been banned.</h2>
+                <p>Contact support at <a href="mailto:omedash.help@gmail.com"
+                        style="color:#93c5fd;">omedash.help@gmail.com</a> for assistance.</p>
+            </div>
+        </div>
+
+        <!-- Temporary Ban Overlay with Countdown -->
+        <div id="tempBanOverlay" class="tempban-fullscreen" style="display:none;">
+            <div class="tempban-card">
+                <h2>⚠️ Account Temporarily Banned</h2>
+                <p class="tempban-sub">Your account has been suspended due to policy violations.<br>Access will be
+                    restored when the timer expires.</p>
+                <div class="countdown-row">
+                    <div class="countdown-unit">
+                        <div class="countdown-digit" id="cdDays">00</div>
+                        <span class="countdown-label">Days</span>
+                    </div>
+                    <div class="countdown-unit">
+                        <div class="countdown-digit" id="cdHours">00</div>
+                        <span class="countdown-label">Hours</span>
+                    </div>
+                    <div class="countdown-unit">
+                        <div class="countdown-digit" id="cdMins">00</div>
+                        <span class="countdown-label">Minutes</span>
+                    </div>
+                    <div class="countdown-unit">
+                        <div class="countdown-digit" id="cdSecs">00</div>
+                        <span class="countdown-label">Seconds</span>
+                    </div>
+                </div>
+                <div class="tempban-pay-section">
+                    <p>Don’t want to wait? Pay to restore access now.</p>
+                    <button id="tempBanPayBtn" class="payment-pay-btn">Pay $7.99 &amp; Restore Access</button>
+                </div>
+                <p class="payment-contact">Questions? <a href="mailto:omedash.help@gmail.com">omedash.help@gmail.com</a>
+                </p>
+            </div>
+        </div>
+
+        <!-- Payment Overlay (sexual / bad_behavior bans) -->
+        <div id="paymentOverlay" class="payment-fullscreen" style="display:none;">
+            <div class="payment-card">
+                <h2>Account Restricted</h2>
+                <p class="payment-sub">Your account has been restricted due to policy violations.<br>Pay the fee below
+                    to restore full access.</p>
+                <div class="payment-price">$7.99</div>
+                <p class="payment-price-label">One-time unban fee</p>
+                <button id="payUnbanBtn" class="payment-pay-btn">Pay &amp; Restore Access</button>
+                <p class="payment-contact">Questions? <a href="mailto:omedash.help@gmail.com">omedash.help@gmail.com</a>
+                </p>
+            </div>
+        </div>
+
+        <!-- Toast notification container -->
+        <div id="reportToast" class="report-toast"></div>
 
         <!-- Confirm Delete Modal -->
         <div id="confirmDeleteModal" class="modal-overlay" aria-hidden="true">
@@ -2698,7 +3051,6 @@
             <div class="filter-group">
                 <label><span class="filter-icon">👤</span> Your Gender</label>
                 <select id="myGender">
-                    <option value="any">Prefer not to say</option>
                     <option value="male">Male</option>
                     <option value="female">Female</option>
                     <option value="other">Other</option>
@@ -3299,8 +3651,29 @@
         const chatSend = document.getElementById("chatSend");
         const chatStatus = document.getElementById("chatStatus");
         const chatStatusFlag = document.getElementById("chatStatusFlag");
+        const mobileStatusBadge = document.getElementById("mobileStatusBadge");
         const agreeNote = document.getElementById('agreeNote');
         const starfieldEl = document.getElementById('starfield');
+
+        // Helper function to update mobile status badge (syncs with chatStatus)
+        function updateMobileStatusBadge(text, show) {
+            if (!mobileStatusBadge) return;
+
+            // Only show on mobile (when chatStatus is hidden)
+            const isMobile = window.matchMedia('(max-width: 600px) and (pointer: coarse)').matches;
+            if (!isMobile) return;
+
+            if (show) {
+                mobileStatusBadge.textContent = text;
+                mobileStatusBadge.style.display = 'block';
+                mobileStatusBadge.classList.remove('fade-out');
+            } else {
+                mobileStatusBadge.classList.add('fade-out');
+                setTimeout(() => {
+                    mobileStatusBadge.style.display = 'none';
+                }, 300);
+            }
+        }
 
         // Generate random stars for starfield
         function initStarfield() {
@@ -3358,16 +3731,29 @@
         const filterGenderSelect = document.getElementById("filterGender");
         const filterCountrySelect = document.getElementById("filterCountry");
         const reportBtn = document.getElementById("reportBtn");
-        const banModal = document.getElementById("banModal");
-        const unbanBtn = document.getElementById("unbanBtn");
-        const banTimer = document.getElementById("banTimer");
+        const reportModal = document.getElementById("reportModal");
+        const reportCancelBtn = document.getElementById("reportCancelBtn");
+        const reportConfirmBtn = document.getElementById("reportConfirmBtn");
+        const reportToast = document.getElementById("reportToast");
+        const banOverlay = document.getElementById("banOverlay");
+        const paymentOverlay = document.getElementById("paymentOverlay");
+        const payUnbanBtn = document.getElementById("payUnbanBtn");
+        const tempBanOverlay = document.getElementById("tempBanOverlay");
+        const tempBanPayBtn = document.getElementById("tempBanPayBtn");
+        const cdDays = document.getElementById("cdDays");
+        const cdHours = document.getElementById("cdHours");
+        const cdMins = document.getElementById("cdMins");
+        const cdSecs = document.getElementById("cdSecs");
         const confirmDeleteModal = document.getElementById("confirmDeleteModal");
         const confirmDeleteTitle = document.getElementById("confirmDeleteTitle");
         const confirmDeleteMessage = document.getElementById("confirmDeleteMessage");
         const confirmDeleteOk = document.getElementById("confirmDeleteOk");
         const confirmDeleteCancel = document.getElementById("confirmDeleteCancel");
         let confirmDeleteAction = null;
-        let banCountdownInterval = null;
+        let selectedReportReason = null;
+        let isReportSubmitting = false;
+        // partnerUid is set when matched (server sends it); used for report
+        let currentPartnerUid = null;
 
         let pc = null;
         let localStream = null;
@@ -3450,70 +3836,184 @@
             } catch (e) { /* ignore */ }
         }
 
+        // ── Report Modal Logic ──────────────────────────────────────
+        function openReportModal() {
+            if (!reportModal) return;
+            selectedReportReason = null;
+            isReportSubmitting = false;
+            // Reset button states
+            document.querySelectorAll('.report-reason-btn').forEach(btn => {
+                btn.classList.remove('selected');
+                btn.disabled = false;
+            });
+            if (reportConfirmBtn) { reportConfirmBtn.disabled = true; reportConfirmBtn.textContent = 'Confirm Report'; }
+            reportModal.style.display = 'flex';
+        }
+
+        function closeReportModal() {
+            if (reportModal) reportModal.style.display = 'none';
+            selectedReportReason = null;
+            isReportSubmitting = false;
+        }
+
+        function showToast(message) {
+            if (!reportToast) return;
+            reportToast.textContent = message;
+            reportToast.classList.add('show');
+            setTimeout(() => { reportToast.classList.remove('show'); }, 3000);
+        }
+
+        function disableAllControls() {
+            try { startBtn.disabled = true; } catch (e) { }
+            try { nextBtn.disabled = true; } catch (e) { }
+            try { pauseBtn.disabled = true; } catch (e) { }
+            try { chatSend.disabled = true; } catch (e) { }
+            try { chatInput.disabled = true; } catch (e) { }
+            try { updateReportVisibility(); } catch (e) { }
+        }
+
+        function enableAllControls() {
+            try { startBtn.disabled = false; } catch (e) { }
+            try { nextBtn.disabled = false; } catch (e) { }
+            try { pauseBtn.disabled = false; } catch (e) { }
+            try { chatSend.disabled = false; } catch (e) { }
+            try { chatInput.disabled = false; } catch (e) { }
+            try { updateReportVisibility(); } catch (e) { }
+        }
+
+        function showBanOverlay(reason, expiresAt) {
+            if (reason === 'minor' || (!reason)) {
+                // minor → permanent red ban
+                if (banOverlay) banOverlay.style.display = 'flex';
+                disableAllControls();
+                return;
+            }
+            // sexual / bad_behavior
+            if (expiresAt) {
+                // Temporary ban with countdown
+                showTempBanOverlay(expiresAt);
+            } else {
+                // Fallback: show payment overlay
+                showPaymentOverlay();
+            }
+        }
+        window.showBanOverlay = showBanOverlay;
+
+        let banCountdownInterval = null;
+
+        function showTempBanOverlay(expiresAt) {
+            if (tempBanOverlay) tempBanOverlay.style.display = 'flex';
+            disableAllControls();
+            // Start countdown
+            if (banCountdownInterval) { clearInterval(banCountdownInterval); banCountdownInterval = null; }
+            function tick() {
+                const remaining = expiresAt - Date.now();
+                if (remaining <= 0) {
+                    // Timer expired — auto-reload
+                    clearInterval(banCountdownInterval);
+                    banCountdownInterval = null;
+                    if (cdDays) cdDays.textContent = '00';
+                    if (cdHours) cdHours.textContent = '00';
+                    if (cdMins) cdMins.textContent = '00';
+                    if (cdSecs) cdSecs.textContent = '00';
+                    window.location.reload();
+                    return;
+                }
+                const totalSecs = Math.floor(remaining / 1000);
+                const d = Math.floor(totalSecs / 86400);
+                const h = Math.floor((totalSecs % 86400) / 3600);
+                const m = Math.floor((totalSecs % 3600) / 60);
+                const s = totalSecs % 60;
+                if (cdDays) cdDays.textContent = String(d).padStart(2, '0');
+                if (cdHours) cdHours.textContent = String(h).padStart(2, '0');
+                if (cdMins) cdMins.textContent = String(m).padStart(2, '0');
+                if (cdSecs) cdSecs.textContent = String(s).padStart(2, '0');
+            }
+            tick();
+            banCountdownInterval = setInterval(tick, 1000);
+        }
+        window.showTempBanOverlay = showTempBanOverlay;
+
+        function hideTempBanOverlay() {
+            if (tempBanOverlay) tempBanOverlay.style.display = 'none';
+            if (banCountdownInterval) { clearInterval(banCountdownInterval); banCountdownInterval = null; }
+        }
+
+        function showPaymentOverlay() {
+            if (paymentOverlay) paymentOverlay.style.display = 'flex';
+            disableAllControls();
+        }
+
+        function hidePaymentOverlay() {
+            if (paymentOverlay) paymentOverlay.style.display = 'none';
+        }
+
+        // Pay button → emit request-unban to server (Stripe placeholder)
+        function handlePayUnban(btn) {
+            if (!socket || !socket.connected) {
+                showToast('Not connected to server');
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+            socket.emit('request-unban');
+        }
+
+        if (payUnbanBtn) {
+            payUnbanBtn.addEventListener('click', () => handlePayUnban(payUnbanBtn));
+        }
+        if (tempBanPayBtn) {
+            tempBanPayBtn.addEventListener('click', () => handlePayUnban(tempBanPayBtn));
+        }
+
+        // Reason button selection (single-select)
+        document.querySelectorAll('.report-reason-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (isReportSubmitting) return;
+                document.querySelectorAll('.report-reason-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedReportReason = btn.dataset.reason;
+                if (reportConfirmBtn) reportConfirmBtn.disabled = false;
+            });
+        });
+
+        // Cancel button
+        if (reportCancelBtn) {
+            reportCancelBtn.addEventListener('click', closeReportModal);
+        }
+
+        // Click outside modal to close
+        if (reportModal) {
+            reportModal.addEventListener('click', (e) => {
+                if (e.target === reportModal) closeReportModal();
+            });
+        }
+
+        // Confirm button — submit report
+        if (reportConfirmBtn) {
+            reportConfirmBtn.addEventListener('click', () => {
+                if (!selectedReportReason || isReportSubmitting) return;
+                if (!currentPartnerUid) { showToast('No partner to report'); closeReportModal(); return; }
+                isReportSubmitting = true;
+                // Loading state
+                reportConfirmBtn.disabled = true;
+                reportConfirmBtn.textContent = 'Submitting...';
+                document.querySelectorAll('.report-reason-btn').forEach(b => b.disabled = true);
+                if (reportCancelBtn) reportCancelBtn.disabled = true;
+                // Emit report
+                if (socket) {
+                    socket.emit('report-user', { reason: selectedReportReason, partnerUid: currentPartnerUid });
+                }
+            });
+        }
+
+        // Report button opens modal (not direct emit)
         if (reportBtn) {
-            // start hidden
             reportBtn.style.display = 'none';
             reportBtn.addEventListener('click', () => {
                 if (!currentPartner) return;
-                try {
-                    reportBtn.disabled = true;
-                    if (socket) socket.emit('report-user', { partner: currentPartner });
-                    if (socket) socket.emit('next');
-                } catch (e) { /* ignore */ }
+                openReportModal();
             });
-        }
-
-        // show ban modal when server notifies this client is banned
-        // Close button removed from ban modal — modal can only be dismissed by unban or programmatic flow.
-
-        if (unbanBtn) {
-            unbanBtn.addEventListener('click', () => {
-                try {
-                    // placeholder: emit a request-unban event (server-side payment flow required)
-                    if (socket) socket.emit('request-unban');
-                    alert('Unban requested. Payment flow is not implemented in this demo.');
-                } catch (e) { /* ignore */ }
-            });
-        }
-
-        function formatRemaining(ms) {
-            if (!ms || ms <= 0) return '0s';
-            const s = Math.floor(ms / 1000);
-            const days = Math.floor(s / 86400);
-            const hours = Math.floor((s % 86400) / 3600);
-            const mins = Math.floor((s % 3600) / 60);
-            const secs = s % 60;
-            if (days > 0) return `${days}d ${hours}h ${mins}m`;
-            if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
-            if (mins > 0) return `${mins}m ${secs}s`;
-            return `${secs}s`;
-        }
-
-        function startBanCountdown(until) {
-            try {
-                if (!banTimer) return;
-                if (banCountdownInterval) { clearInterval(banCountdownInterval); banCountdownInterval = null; }
-                function tick() {
-                    const remaining = until - Date.now();
-                    if (remaining <= 0) {
-                        banTimer.textContent = 'Time remaining: 0s';
-                        clearInterval(banCountdownInterval);
-                        banCountdownInterval = null;
-                        // client-side clean up; server will auto-unban as well
-                        if (banModal) banModal.style.display = 'none';
-                        try { startBtn.disabled = false; } catch (e) { }
-                        try { nextBtn.disabled = false; } catch (e) { }
-                        try { pauseBtn.disabled = false; } catch (e) { }
-                        try { chatSend.disabled = false; } catch (e) { }
-                        try { chatInput.disabled = false; } catch (e) { }
-                        try { updateReportVisibility(); } catch (e) { }
-                        return;
-                    }
-                    banTimer.textContent = 'Time remaining: ' + formatRemaining(remaining);
-                }
-                tick();
-                banCountdownInterval = setInterval(tick, 1000);
-            } catch (e) { /* ignore */ }
         }
 
         async function startAs(roleAssigned) {
@@ -3539,13 +4039,15 @@
         }
 
         function attachSocketHandlers() {
-            socket.on("matched", async ({ role: r, partner }) => {
+            socket.on("matched", async ({ role: r, partner, partnerUid: pUid }) => {
                 log("matched:", r, partner);
                 currentPartner = partner;
+                currentPartnerUid = pUid || null; // UID of partner for reporting
                 partnerConnectedAt = Date.now();
                 stText.textContent = "Matched - connecting...";
                 try {
                     if (chatStatus) chatStatus.textContent = 'Connected';
+                    updateMobileStatusBadge('Connected', true);
                     // hide loading spinner when matched
                     try { const spinner = document.getElementById('partnerSpinner'); if (spinner) spinner.style.display = 'none'; } catch (e) { }
                     // hide starfield when connected
@@ -3611,6 +4113,7 @@
                 clearChat();
                 stText.textContent = "Partner left. Searching for next...";
                 try { if (chatStatus) chatStatus.textContent = 'Searching partner...'; } catch (e) { }
+                updateMobileStatusBadge('Searching partner...', true);
                 try { const spinner = document.getElementById('partnerSpinner'); if (spinner) { spinner.style.top = 'calc(50% - 10px)'; spinner.style.display = 'block'; } } catch (e) { }
                 try { showStarfield(); } catch (e) { }
                 try { const big = document.getElementById('partnerLogoBig'); if (big) big.style.display = 'none'; } catch (e) { }
@@ -3645,31 +4148,119 @@
                 appendChatMessage("other", msg.text);
             });
 
-            socket.on('banned', (payload) => {
+            // Report acknowledgment — close modal, show toast, skip to next
+            socket.on('report-received', (payload) => {
                 try {
-                    const until = payload && payload.until ? payload.until : (Date.now() + 300 * 3600 * 1000);
-                    if (banModal) banModal.style.display = 'flex';
-                    // disable main controls
-                    try { startBtn.disabled = true; } catch (e) { }
-                    try { nextBtn.disabled = true; } catch (e) { }
-                    try { pauseBtn.disabled = true; } catch (e) { }
-                    try { chatSend.disabled = true; } catch (e) { }
-                    try { chatInput.disabled = true; } catch (e) { }
-                    try { updateReportVisibility(); } catch (e) { }
-                    try { startBanCountdown(until); } catch (e) { }
+                    closeReportModal();
+                    showToast('Report submitted');
+                    // Auto-skip to next partner
+                    if (socket) socket.emit('next');
                 } catch (e) { /* ignore */ }
             });
 
+            // Report error — show error toast, re-enable modal
+            socket.on('report-error', (payload) => {
+                try {
+                    const msg = (payload && payload.message) || 'Report failed';
+                    showToast(msg);
+                    // Re-enable modal controls
+                    isReportSubmitting = false;
+                    if (reportConfirmBtn) { reportConfirmBtn.disabled = !selectedReportReason; reportConfirmBtn.textContent = 'Confirm Report'; }
+                    document.querySelectorAll('.report-reason-btn').forEach(b => b.disabled = false);
+                    if (reportCancelBtn) reportCancelBtn.disabled = false;
+                } catch (e) { /* ignore */ }
+            });
+
+            // Banned — show correct overlay based on reason + expiration
+            socket.on('banned', (payload) => {
+                try {
+                    closeReportModal();
+                    const reason = (payload && payload.reason) || 'minor';
+                    const permanent = payload && payload.permanent;
+                    const expiresAt = payload && payload.expiresAt;
+                    if (permanent || reason === 'minor') {
+                        showBanOverlay('minor');
+                    } else {
+                        showBanOverlay(reason, expiresAt);
+                    }
+                } catch (e) { /* ignore */ }
+            });
+
+            // Unbanned — hide all overlays, re-enable everything
             socket.on('unbanned', () => {
                 try {
-                    if (banCountdownInterval) { clearInterval(banCountdownInterval); banCountdownInterval = null; }
-                    if (banModal) banModal.style.display = 'none';
-                    try { startBtn.disabled = false; } catch (e) { }
-                    try { nextBtn.disabled = false; } catch (e) { }
-                    try { pauseBtn.disabled = false; } catch (e) { }
-                    try { chatSend.disabled = false; } catch (e) { }
-                    try { chatInput.disabled = false; } catch (e) { }
-                    try { updateReportVisibility(); } catch (e) { }
+                    hidePaymentOverlay();
+                    hideTempBanOverlay();
+                    if (banOverlay) banOverlay.style.display = 'none';
+                    enableAllControls();
+                    showToast('Account access restored');
+                } catch (e) { /* ignore */ }
+            });
+
+            // ── Private Messaging Events ──────────────────────────────
+            // Server requests payment for premium messaging
+            socket.on('need_payment', (payload) => {
+                try {
+                    console.log('Premium required for messaging');
+                    openMembershipModal();
+                    showToast('Premium membership required to message');
+                } catch (e) { console.error('need_payment handler failed', e); }
+            });
+
+            // Incoming private message from another user
+            socket.on('private-message-received', (payload) => {
+                try {
+                    const { fromUid, text, conversationId } = payload;
+                    console.log('Received private message from', fromUid);
+                    showToast('New message received');
+                    // Refresh messages tab if it's open
+                    const ml = document.getElementById('messageList');
+                    if (ml && ml.style.display === 'flex') {
+                        renderMessagesList();
+                    }
+                } catch (e) { console.error('private-message-received handler failed', e); }
+            });
+
+            // Message successfully sent
+            socket.on('message-sent', (payload) => {
+                try {
+                    console.log('Message sent successfully');
+                } catch (e) { /* ignore */ }
+            });
+
+            // Message error
+            socket.on('message-error', (payload) => {
+                try {
+                    const msg = (payload && payload.message) || 'Failed to send message';
+                    showToast(msg);
+                } catch (e) { /* ignore */ }
+            });
+
+            // Unban error — re-enable pay buttons
+            socket.on('unban-error', (payload) => {
+                try {
+                    const msg = (payload && payload.message) || 'Unban failed';
+                    showToast(msg);
+                    if (payUnbanBtn) { payUnbanBtn.disabled = false; payUnbanBtn.textContent = 'Pay & Restore Access'; }
+                    if (tempBanPayBtn) { tempBanPayBtn.disabled = false; tempBanPayBtn.textContent = 'Pay $7.99 & Restore Access'; }
+                } catch (e) { /* ignore */ }
+            });
+
+            // Clear history confirmation from server
+            socket.on('history-cleared', () => {
+                try {
+                    console.log('History cleared successfully');
+                    renderHistoryList();
+                    showToast('History cleared');
+                    if (clearHistoryBtn) clearHistoryBtn.disabled = true;
+                } catch (e) { console.error('history-cleared handler failed', e); }
+            });
+
+            // Clear history error from server
+            socket.on('history-error', (payload) => {
+                try {
+                    const msg = (payload && payload.message) || 'Failed to clear history';
+                    showToast(msg);
                 } catch (e) { /* ignore */ }
             });
         }
@@ -3900,6 +4491,7 @@
             cleanupAfterPartnerLeft();
             clearChat();
             try { if (chatStatus) { chatStatus.style.display = 'block'; chatStatus.textContent = 'Searching partner...'; } } catch (e) { }
+            updateMobileStatusBadge('Searching partner...', true);
             try { const spinner = document.getElementById('partnerSpinner'); if (spinner) { spinner.style.top = 'calc(50% - 10px)'; spinner.style.display = 'block'; } } catch (e) { }
             try { showStarfield(); } catch (e) { }
             try { const small = document.getElementById('partnerLogoSmall'); if (small) small.style.opacity = '0.9'; } catch (e) { }
@@ -3948,83 +4540,127 @@
             return m + 'm ' + rem + 's';
         }
 
-        function renderHistoryList() {
+        // Render conversations from Firestore (qualified connections)
+        async function renderHistoryList() {
             const list = document.getElementById('historyList');
             if (!list) return;
-            list.innerHTML = '';
-            const arr = loadHistory();
-            if (!arr.length) {
-                list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">🤝</div><div class="history-empty-text">No connections yet</div><div style="font-size:12px;color:#94a8c0;">Start chatting to see your history here</div></div>';
-                return;
-            }
-            arr.forEach(entry => {
-                const item = document.createElement('div');
-                item.className = 'history-item';
+            list.innerHTML = '\u003cdiv style="text-align:center;padding:20px;color:#4b6a86;"\u003eLoading...\u003c/div\u003e';
 
-                const avatar = document.createElement('div');
-                avatar.className = 'history-avatar';
-                const displayPic = (entry.pic) ? entry.pic : (partnerProfiles[entry.id] && partnerProfiles[entry.id].pic) ? partnerProfiles[entry.id].pic : null;
-                if (displayPic) {
-                    const img = document.createElement('img'); img.src = displayPic; img.alt = 'pic'; avatar.appendChild(img);
-                } else {
-                    avatar.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="9" r="3.5" fill="#93c5fd"/><path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" fill="#bfdbfe"/></svg>';
+            try {
+                const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
+                if (!user) {
+                    list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-text"\u003eNot logged in\u003c/div\u003e\u003c/div\u003e';
+                    return;
                 }
 
-                const meta = document.createElement('div'); meta.className = 'history-meta';
-                const name = document.createElement('div'); name.className = 'history-name';
-                const displayName = entry.name || (partnerProfiles[entry.id] && partnerProfiles[entry.id].name) || ('User ' + (entry.id ? entry.id.slice(0, 6) : ''));
-                name.textContent = displayName;
-                const dur = document.createElement('div'); dur.className = 'history-duration';
-                dur.textContent = '\u23f1 ' + formatDuration(entry.duration || 0) + '  \u2022  ' + new Date(entry.when).toLocaleString();
-                meta.appendChild(name); meta.appendChild(dur);
+                const uid = user.uid;
 
-                const actions = document.createElement('div'); actions.className = 'history-actions';
-                const textBtn = document.createElement('button'); textBtn.className = 'btn-text'; textBtn.textContent = 'Text';
-                // per-entry delete button (three dots) to remove this history entry
-                const entryMore = document.createElement('button'); entryMore.className = 'more-btn'; entryMore.title = 'Delete this history entry'; entryMore.textContent = '⋮';
-                entryMore.style.marginLeft = '8px';
-                entryMore.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openConfirmDeleteModal(
-                        'Delete history entry',
-                        'Delete this history entry?',
-                        () => {
-                            try {
-                                const arrAll = loadHistory();
-                                const filtered = arrAll.filter(h => !(h.id === entry.id && h.when === entry.when));
-                                saveHistory(filtered);
-                                renderHistoryList();
-                            } catch (err) { console.warn('delete history entry failed', err); }
-                        }
-                    );
-                });
-                // create inline chat box (hidden by default)
-                const chatBox = document.createElement('div');
-                chatBox.style.display = 'none';
-                chatBox.style.marginTop = '8px';
-                const chatBoxInput = document.createElement('input');
-                chatBoxInput.type = 'text';
-                chatBoxInput.placeholder = 'Send a message to this user...';
-                chatBoxInput.style.padding = '8px 10px';
-                chatBoxInput.style.borderRadius = '8px';
-                chatBoxInput.style.border = '1px solid rgba(3,102,214,0.06)';
-                chatBoxInput.style.width = '100%';
-                chatBoxInput.style.flex = '1';
-                chatBoxInput.style.minWidth = '0';
-                const chatBoxSend = document.createElement('button');
-                chatBoxSend.className = 'btn-text';
-                chatBoxSend.textContent = 'Send';
-                chatBoxSend.style.padding = '8px 10px';
-                chatBoxSend.style.marginLeft = '6px';
-                chatBox.appendChild(chatBoxInput);
-                chatBox.appendChild(chatBoxSend);
+                // Query conversations where current user is a participant
+                const conversationsRef = collection(window._firebaseDb, 'conversations');
+                const q = query(
+                    conversationsRef,
+                    where('participants', 'array-contains', uid),
+                    orderBy('startedAt', 'desc')
+                );
 
-                if (entry.id && entry.id === currentPartner) {
-                    textBtn.addEventListener('click', () => { chatInput.focus(); });
-                } else {
+                const snapshot = await getDocs(q);
+
+                if (snapshot.empty) {
+                    list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-icon"\u003e🤝\u003c/div\u003e\u003cdiv class="history-empty-text"\u003eNo connections yet\u003c/div\u003e\u003cdiv style="font-size:12px;color:#94a8c0;"\u003eStay connected for 10+ seconds to save\u003c/div\u003e\u003c/div\u003e';
+                    return;
+                }
+
+                list.innerHTML = '';
+
+                for (const docSnap of snapshot.docs) {
+                    const data = docSnap.data();
+                    const conversationId = docSnap.id;
+                    const participants = data.participants || [];
+                    const participantProfiles = data.participantProfiles || {};
+                    const deletedFor = data.deletedFor || {};
+
+                    // Skip if conversation is soft-deleted for current user
+                    if (deletedFor[uid] === true) continue;
+
+                    // Find partner UID
+                    const partnerUid = participants.find(p => p !== uid);
+                    if (!partnerUid) continue;
+
+                    // Fetch live partner profile from Firestore users collection
+                    const { getDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                    const partnerRef = doc(window._firebaseDb, 'users', partnerUid);
+                    const partnerSnap = await getDoc(partnerRef);
+
+                    let displayName = 'User';
+                    let photoURL = null;
+
+                    if (partnerSnap.exists()) {
+                        const partnerData = partnerSnap.data();
+                        displayName = partnerData.displayName || 'User';
+                        photoURL = partnerData.photoURL || null;
+                    }
+
+                    const durationSeconds = data.durationSeconds || 0;
+                    const startedAt = data.startedAt ? data.startedAt.toDate() : new Date();
+
+                    // Create history item UI
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+
+                    const avatar = document.createElement('div');
+                    avatar.className = 'history-avatar';
+                    if (photoURL) {
+                        const img = document.createElement('img');
+                        img.src = photoURL;
+                        img.alt = 'pic';
+                        avatar.appendChild(img);
+                    } else {
+                        avatar.innerHTML = '\u003csvg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"\u003e\u003ccircle cx="12" cy="9" r="3.5" fill="#93c5fd"/\u003e\u003cpath d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" fill="#bfdbfe"/\u003e\u003c/svg\u003e';
+                    }
+
+                    const meta = document.createElement('div');
+                    meta.className = 'history-meta';
+                    const name = document.createElement('div');
+                    name.className = 'history-name';
+                    name.textContent = displayName;
+                    const dur = document.createElement('div');
+                    dur.className = 'history-duration';
+                    dur.textContent = '⏱ ' + formatDuration(durationSeconds * 1000) + '  •  ' + startedAt.toLocaleString();
+                    meta.appendChild(name);
+                    meta.appendChild(dur);
+
+                    const actions = document.createElement('div');
+                    actions.className = 'history-actions';
+                    const textBtn = document.createElement('button');
+                    textBtn.className = 'btn-text';
+                    textBtn.textContent = 'Text';
+
+                    // Create inline chat box (hidden by default)
+                    const chatBox = document.createElement('div');
+                    chatBox.style.display = 'none';
+                    chatBox.style.marginTop = '8px';
+                    chatBox.style.width = '100%';
+                    chatBox.style.display = 'none';
+                    const chatBoxInput = document.createElement('input');
+                    chatBoxInput.type = 'text';
+                    chatBoxInput.placeholder = 'Send a message...';
+                    chatBoxInput.style.padding = '8px 10px';
+                    chatBoxInput.style.borderRadius = '8px';
+                    chatBoxInput.style.border = '1px solid rgba(3,102,214,0.06)';
+                    chatBoxInput.style.width = '100%';
+                    chatBoxInput.style.flex = '1';
+                    chatBoxInput.style.minWidth = '0';
+                    const chatBoxSend = document.createElement('button');
+                    chatBoxSend.className = 'btn-text';
+                    chatBoxSend.textContent = 'Send';
+                    chatBoxSend.style.padding = '8px 10px';
+                    chatBoxSend.style.marginLeft = '6px';
+                    chatBox.appendChild(chatBoxInput);
+                    chatBox.appendChild(chatBoxSend);
+
+                    // Text button click - toggle chat box
                     textBtn.addEventListener('click', () => {
-                        // toggle inline box and hide the Text button when open
-                        if (chatBox.style.display === 'none') {
+                        if (chatBox.style.display === 'none' || !chatBox.style.display) {
                             chatBox.style.display = 'flex';
                             textBtn.style.display = 'none';
                             chatBoxInput.focus();
@@ -4033,46 +4669,61 @@
                             textBtn.style.display = '';
                         }
                     });
+
+                    // Send button click - emit private message
+                    chatBoxSend.addEventListener('click', async () => {
+                        const txt = (chatBoxInput.value || '').trim();
+                        if (!txt) return;
+
+                        try {
+                            // Emit to server with recipient UID
+                            if (socket) {
+                                socket.emit('private-message', {
+                                    recipientUid: partnerUid,
+                                    text: txt
+                                });
+
+                                // Clear input and close chat box
+                                chatBoxInput.value = '';
+                                chatBox.style.display = 'none';
+                                textBtn.style.display = '';
+
+                                // Show inline ack
+                                const ack = document.createElement('div');
+                                ack.style.fontSize = '12px';
+                                ack.style.color = '#0b4f8a';
+                                ack.textContent = 'Sending...';
+                                actions.appendChild(ack);
+                                setTimeout(() => { try { actions.removeChild(ack); } catch (e) { } }, 2500);
+                            }
+                        } catch (e) {
+                            console.error('Send message failed', e);
+                        }
+                    });
+
+                    actions.appendChild(textBtn);
+
+                    item.appendChild(avatar);
+                    item.appendChild(meta);
+                    item.appendChild(actions);
+                    item.appendChild(chatBox);
+                    list.appendChild(item);
                 }
-
-                // handle send (require membership to message connections)
-                chatBoxSend.addEventListener('click', () => {
-                    const txt = (chatBoxInput.value || '').trim();
-                    if (!txt) return;
-                    if (!entry.id) { alert('No target id'); return; }
-                    try {
-                        // require membership: show subscription modal and abort send
-                        try { openMembershipModal(); } catch (e) { }
-                        return;
-                        // NOTE: remove the above return after implementing membership checks
-                        socket.emit('chat-to', { target: entry.id, text: txt });
-                        // save outgoing direct message
-                        try { addMessageEntry({ id: entry.id, when: Date.now(), text: txt, direction: 'out' }); } catch (e) { }
-                        // small inline ack
-                        chatBoxInput.value = '';
-                        chatBox.style.display = 'none';
-                        // restore the Text button
-                        try { textBtn.style.display = ''; } catch (e) { }
-                        const ack = document.createElement('div'); ack.style.fontSize = '12px'; ack.style.color = '#0b4f8a'; ack.textContent = 'Sent.';
-                        actions.appendChild(ack);
-                        setTimeout(() => { try { actions.removeChild(ack); } catch (e) { } }, 2500);
-                        const ml = document.getElementById('messageList'); if (ml && ml.style.display === 'flex') renderMessagesList();
-                    } catch (e) { alert('Send failed'); }
-                });
-                actions.appendChild(textBtn);
-
-                item.appendChild(avatar);
-                item.appendChild(meta);
-                item.appendChild(actions);
-                chatBox.style.width = '100%';
-                item.appendChild(chatBox);
-                list.appendChild(item);
-            });
+            } catch (err) {
+                console.error('Error loading conversations:', err);
+                list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-text"\u003eError loading history\u003c/div\u003e\u003c/div\u003e';
+            }
         }
+
+        let historyModalOpener = null;
 
         function openHistoryModal() {
             const m = document.getElementById('historyModal');
             if (!m) return;
+
+            // Store the element that opened the modal
+            historyModalOpener = document.activeElement;
+
             renderHistoryList();
             // default to Connections tab
             const hc = document.getElementById('historyTabConnections');
@@ -4094,13 +4745,33 @@
 
             m.style.display = 'flex';
             m.setAttribute('aria-hidden', 'false');
+
+            // Focus first focusable element in modal
+            setTimeout(() => {
+                const focusable = m.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (focusable.length > 0) focusable[0].focus();
+            }, 100);
         }
 
         function closeHistoryModal() {
             const m = document.getElementById('historyModal');
             if (!m) return;
+
+            // Blur any focused element inside modal before hiding
+            if (m.contains(document.activeElement)) {
+                document.activeElement.blur();
+            }
+
             m.style.display = 'none';
             m.setAttribute('aria-hidden', 'true');
+
+            // Restore focus to the element that opened the modal
+            if (historyModalOpener && historyModalOpener.focus) {
+                historyModalOpener.focus();
+                historyModalOpener = null;
+            } else {
+                document.body.focus();
+            }
         }
 
         if (historyBtn) historyBtn.addEventListener('click', openHistoryModal);
@@ -4121,19 +4792,41 @@
 
         function closeClearHistoryConfirm() {
             if (!clearHistoryConfirm) return;
+
+            // Blur any focused element inside modal before hiding
+            if (clearHistoryConfirm.contains(document.activeElement)) {
+                document.activeElement.blur();
+            }
+
             clearHistoryConfirm.style.display = 'none';
             clearHistoryConfirm.setAttribute('aria-hidden', 'true');
+
+            // Return focus to body
+            document.body.focus();
         }
 
         function doClearHistory() {
             try {
-                localStorage.removeItem('vchat_history');
-                // re-render history list
-                renderHistoryList();
-                // disable the clear button
-                try { if (clearHistoryBtn) clearHistoryBtn.disabled = true; } catch (e) { }
-            } catch (e) { console.warn('clear history failed', e); }
-            closeClearHistoryConfirm();
+                const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
+                if (!user) {
+                    showToast('Not logged in');
+                    closeClearHistoryConfirm();
+                    return;
+                }
+
+                // Emit to server - server handles Firestore delete
+                if (socket) {
+                    socket.emit('clear-history');
+                    closeClearHistoryConfirm();
+                } else {
+                    showToast('Connection error');
+                    closeClearHistoryConfirm();
+                }
+            } catch (e) {
+                console.error('Clear history request failed', e);
+                showToast('Failed to clear history');
+                closeClearHistoryConfirm();
+            }
         }
 
         if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', openClearHistoryConfirm);
@@ -4271,17 +4964,43 @@
         const cancelProfileBtn = document.getElementById('cancelProfileBtn');
         const removePicBtn = document.getElementById('removePicBtn');
 
+        let editProfileModalOpener = null;
+
         function openEditProfileModal() {
             if (!editProfileModal) return;
+
+            // Store the element that opened the modal
+            editProfileModalOpener = document.activeElement;
+
             loadProfileFromStorage();
             editProfileModal.style.display = 'flex';
             editProfileModal.setAttribute('aria-hidden', 'false');
+
+            // Focus first focusable element in modal
+            setTimeout(() => {
+                const focusable = editProfileModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (focusable.length > 0) focusable[0].focus();
+            }, 100);
         }
 
         function closeEditProfileModal() {
             if (!editProfileModal) return;
+
+            // Blur any focused element inside modal before hiding
+            if (editProfileModal.contains(document.activeElement)) {
+                document.activeElement.blur();
+            }
+
             editProfileModal.style.display = 'none';
             editProfileModal.setAttribute('aria-hidden', 'true');
+
+            // Restore focus to the element that opened the modal
+            if (editProfileModalOpener && editProfileModalOpener.focus) {
+                editProfileModalOpener.focus();
+                editProfileModalOpener = null;
+            } else {
+                document.body.focus();
+            }
         }
 
         function loadProfileFromStorage() {
@@ -4342,19 +5061,64 @@
 
         if (saveProfileBtn) {
             saveProfileBtn.addEventListener('click', async () => {
-                let picData = null;
-                if (profilePicInput && profilePicInput.files && profilePicInput.files[0]) {
-                    try { picData = await readFileAsDataURL(profilePicInput.files[0]); } catch (e) { console.error(e); }
-                } else {
-                    // if preview contains an <img> tag, keep that src
-                    const img = profilePreview.querySelector('img');
-                    if (img) picData = img.src;
+                try {
+                    const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
+                    if (!user) {
+                        showToast('Not logged in');
+                        return;
+                    }
+
+                    let picData = null;
+                    if (profilePicInput && profilePicInput.files && profilePicInput.files[0]) {
+                        try { picData = await readFileAsDataURL(profilePicInput.files[0]); } catch (e) { console.error(e); }
+                    } else {
+                        // if preview contains an <img> tag, keep that src
+                        const img = profilePreview.querySelector('img');
+                        if (img) picData = img.src;
+                    }
+
+                    const nameText = profileName ? profileName.value.trim() : '';
+                    const displayName = nameText || 'User';
+                    const photoURL = picData || null;
+
+                    console.log('Saving profile for UID:', user.uid);
+                    console.log('displayName:', displayName);
+                    console.log('photoURL:', photoURL ? 'Set' : 'null');
+
+                    // Save to Firestore users collection
+                    const { setDoc, doc, serverTimestamp, getDoc } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                    const userRef = doc(window._firebaseDb, 'users', user.uid);
+
+                    await setDoc(userRef, {
+                        displayName: displayName,
+                        photoURL: photoURL,
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+
+                    console.log('✓ Profile saved to Firestore');
+
+                    // Verify the save by reading back
+                    const verifySnap = await getDoc(userRef);
+                    if (verifySnap.exists()) {
+                        const data = verifySnap.data();
+                        console.log('Verified displayName:', data.displayName);
+                        console.log('Verified photoURL:', data.photoURL);
+                    }
+
+                    // Also save to localStorage for backward compatibility
+                    try {
+                        localStorage.setItem('vchat_profile', JSON.stringify({
+                            pic: picData,
+                            name: nameText
+                        }));
+                    } catch (e) { console.error('localStorage save failed', e); }
+
+                    showToast('Profile saved');
+                    closeEditProfileModal();
+                } catch (e) {
+                    console.error('Save profile failed:', e);
+                    showToast('Failed to save profile');
                 }
-                const nameText = profileName ? profileName.value : '';
-                const obj = { pic: picData, name: nameText };
-                try { localStorage.setItem('vchat_profile', JSON.stringify(obj)); }
-                catch (e) { console.error('save profile failed', e); }
-                closeEditProfileModal();
             });
         }
 
@@ -4376,16 +5140,42 @@
         const closeMembershipBtn = document.getElementById('closeMembershipBtn');
         const subscribeBtn = document.getElementById('subscribeBtn');
 
+        let membershipModalOpener = null;
+
         function openMembershipModal() {
             if (!membershipModal) return;
+
+            // Store the element that opened the modal
+            membershipModalOpener = document.activeElement;
+
             membershipModal.style.display = 'flex';
             membershipModal.setAttribute('aria-hidden', 'false');
+
+            // Focus first focusable element in modal
+            setTimeout(() => {
+                const focusable = membershipModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (focusable.length > 0) focusable[0].focus();
+            }, 100);
         }
 
         function closeMembershipModal() {
             if (!membershipModal) return;
+
+            // Blur any focused element inside modal before hiding
+            if (membershipModal.contains(document.activeElement)) {
+                document.activeElement.blur();
+            }
+
             membershipModal.style.display = 'none';
             membershipModal.setAttribute('aria-hidden', 'true');
+
+            // Restore focus to the element that opened the modal
+            if (membershipModalOpener && membershipModalOpener.focus) {
+                membershipModalOpener.focus();
+                membershipModalOpener = null;
+            } else {
+                document.body.focus();
+            }
         }
 
         if (closeMembershipBtn) closeMembershipBtn.addEventListener('click', closeMembershipModal);
@@ -4526,6 +5316,7 @@
                 pauseBtn.classList.add('btn-resume');
                 stText.textContent = "Paused — take a break";
                 try { if (chatStatus) chatStatus.style.display = 'none'; } catch (e) { }
+                updateMobileStatusBadge('', false);
                 try { const spinner = document.getElementById('partnerSpinner'); if (spinner) spinner.style.display = 'none'; } catch (e) { }
                 try { showStarfield(); } catch (e) { }
                 try { const big = document.getElementById('partnerLogoBig'); if (big) big.style.display = 'block'; } catch (e) { }
@@ -4546,6 +5337,7 @@
                 pauseBtn.classList.add('btn-pause');
                 stText.textContent = "Searching for next...";
                 try { if (chatStatus) { chatStatus.style.display = 'block'; chatStatus.textContent = 'Searching partner...'; } } catch (e) { }
+                updateMobileStatusBadge('Searching partner...', true);
                 try { const spinner = document.getElementById('partnerSpinner'); if (spinner) { spinner.style.top = 'calc(50% - 10px)'; spinner.style.display = 'block'; } } catch (e) { }
                 try { showStarfield(); } catch (e) { }
                 try { const big = document.getElementById('partnerLogoBig'); if (big) big.style.display = 'none'; } catch (e) { }
@@ -4561,6 +5353,11 @@
         });
 
         startBtn.addEventListener("click", async () => {
+            // Block if onboarding not complete
+            if (!window._onboardingComplete) {
+                if (window.showAgeModal) window.showAgeModal();
+                return;
+            }
             if (socket) return;
 
             startBtn.disabled = true;
@@ -4586,12 +5383,32 @@
 
             socket.on("connect", async () => {
                 attachSocketHandlers();
+                // Register Firebase UID with server for ban check + report tracking
+                try {
+                    const uid = window._firebaseUid;
+                    if (uid) socket.emit('register', { uid: uid });
+                } catch (e) { console.error('register emit failed', e); }
+
+                // Server may force onboarding if validation fails
+                socket.on('forceOnboarding', () => {
+                    try {
+                        console.log('Server forced onboarding — disconnecting');
+                        socket.disconnect();
+                        socket = null;
+                        window._onboardingComplete = false;
+                        startBtn.disabled = false;
+                        startBtn.style.display = '';
+                        if (window.showAgeModal) window.showAgeModal();
+                    } catch (e) { /* ignore */ }
+                });
+
                 await startLocalStream();
                 nextBtn.style.display = "block";
                 pauseBtn.style.display = "block";
                 stText.textContent = "Searching for match...";
                 try {
                     if (chatStatus) { chatStatus.style.display = 'block'; chatStatus.textContent = 'Searching partner...'; }
+                    updateMobileStatusBadge('Searching partner...', true);
                     if (chatStatusFlag) chatStatusFlag.textContent = '';
                     try { const spinner = document.getElementById('partnerSpinner'); if (spinner) { spinner.style.top = 'calc(50% - 10px)'; spinner.style.display = 'block'; } } catch (e) { }
                     try { showStarfield(); } catch (e) { }
@@ -4878,8 +5695,8 @@
                             style="font-size:14px;">👤</span> Gender</label>
                     <select id="ageGender"
                         style="width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid rgba(59,130,246,0.15);background:linear-gradient(180deg,#ffffff 0%,#f0f7ff 100%);font-size:13px;font-weight:600;color:#083e6a;cursor:pointer;appearance:none;background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%2710%27 fill=%27%233b82f6%27 viewBox=%270 0 16 16%27%3E%3Cpath d=%27M8 11L3 6h10l-5 5z%27/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 12px center;transition:all 0.2s ease;box-shadow:0 2px 6px rgba(3,102,214,0.06);">
-                        <option value="unspecified">Prefer not to say</option>
-                        <option value="male" selected>Male</option>
+                        <option value="" selected disabled>Select your gender</option>
+                        <option value="male">Male</option>
                         <option value="female">Female</option>
                         <option value="other">Other</option>
                     </select>
@@ -4992,18 +5809,37 @@
 
             ageSubmitBtn.addEventListener('click', async () => {
                 const age = parseInt(ageInput.value, 10);
+                const gender = ageGender ? ageGender.value : '';
+
+                // Validate gender selected
+                if (!gender) {
+                    ageError.textContent = 'Please select your gender.';
+                    ageError.style.display = 'block';
+                    return;
+                }
+
+                // Validate age entered
                 if (!age || age <= 0) {
                     ageError.textContent = 'Please enter a valid age.';
                     ageError.style.display = 'block';
                     return;
                 }
+
+                // Under 18 — forbidden
+                if (age < 18) {
+                    ageError.style.display = 'none';
+                    try { localStorage.setItem('vchat_verification', JSON.stringify({ age, gender })); } catch (e) { }
+                    window.hideAgeModal();
+                    showForbidden();
+                    return;
+                }
+
                 ageError.style.display = 'none';
-                const gender = ageGender ? (ageGender.value || 'unspecified') : 'unspecified';
                 try { localStorage.setItem('vchat_verification', JSON.stringify({ age, gender })); } catch (e) { }
 
-                // update main filter `myGender` to match selection
+                // Update main filter myGender to match selection
                 try {
-                    const map = { 'unspecified': 'any', 'male': 'male', 'female': 'female', 'other': 'other' };
+                    const map = { 'other': 'any', 'male': 'male', 'female': 'female' };
                     const sel = document.getElementById('myGender');
                     if (sel) {
                         try { window._suppressMembershipPopup = true; } catch (e) { }
@@ -5011,12 +5847,6 @@
                         sel.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 } catch (e) { /* ignore */ }
-
-                if (age < 18) {
-                    window.hideAgeModal();
-                    showForbidden();
-                    return;
-                }
 
                 // Save gender, age, onboardingComplete to Firestore
                 if (window._saveOnboarding) {
@@ -5027,6 +5857,7 @@
                     }
                 }
 
+                window._onboardingComplete = true;
                 window.hideAgeModal();
                 // Reveal main app
                 if (window._revealApp) window._revealApp();
@@ -5054,7 +5885,12 @@
             setDoc,
             deleteDoc,
             onSnapshot,
-            serverTimestamp
+            serverTimestamp,
+            collection,
+            query,
+            where,
+            orderBy,
+            getDocs
         } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -5069,6 +5905,17 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+
+        // Expose to window for access from other parts of the code
+        window._firebaseAuth = auth;
+        window._firebaseDb = db;
+
+        // Expose Firestore query functions for non-module scripts
+        window.collection = collection;
+        window.query = query;
+        window.where = where;
+        window.orderBy = orderBy;
+        window.getDocs = getDocs;
 
         // Reveal main app content (remove app-hidden from all elements)
         function revealApp() {
@@ -5089,6 +5936,7 @@
                 onboardingComplete: true
             }, { merge: true });
             console.log('Onboarding saved for:', user.uid);
+            detectAndSaveCountry(user, db);
         };
 
         // Sign in with Google (popup)
@@ -5107,6 +5955,29 @@
             googleBtn.addEventListener('click', signInWithGoogle);
         }
 
+        async function detectAndSaveCountry(user, db) {
+            if (window._countryDetected) return;
+            window._countryDetected = true;
+            try {
+                const res = await fetch('https://ipapi.co/json/');
+                const data = await res.json();
+                if (data && data.country_code) {
+                    const code = data.country_code;
+                    const name = data.country_name || code;
+                    const emoji = code.toUpperCase().replace(/./g, char => String.fromCodePoint(char.charCodeAt(0) + 127397));
+                    const userRef = doc(db, 'users', user.uid);
+                    await setDoc(userRef, {
+                        countryName: name,
+                        countryCode: code,
+                        countryEmoji: emoji
+                    }, { merge: true });
+                    console.log('Country info saved:', code, emoji);
+                }
+            } catch (err) {
+                console.error('Error detecting country:', err);
+            }
+        }
+
         // Auth state change handler — orchestrates the full flow
         onAuthStateChanged(auth, async (user) => {
             const loginScreen = document.getElementById('loginScreen');
@@ -5118,6 +5989,8 @@
             }
 
             console.log('Authenticated:', user.uid);
+            // Expose UID globally for socket registration
+            window._firebaseUid = user.uid;
 
             // Hide login screen
             if (loginScreen) loginScreen.style.display = 'none';
@@ -5146,13 +6019,48 @@
                 // Update lastLogin
                 await setDoc(userRef, { lastLogin: serverTimestamp() }, { merge: true });
 
-                if (data.onboardingComplete === true) {
+                // ── Ban check on page load ──
+                if (data.isBanned === true) {
+                    console.log('User is banned, reason:', data.bannedReason);
+                    revealApp(); // reveal so overlays are visible
+
+                    if (data.bannedReason === 'minor') {
+                        // Permanent ban — show red overlay
+                        if (window.showBanOverlay) window.showBanOverlay('minor');
+                        return;
+                    }
+
+                    // Temporary ban — check expiration
+                    const expiresAt = data.bannedExpiresAt;
+                    let expiresMs = null;
+                    if (expiresAt) {
+                        // Firestore Timestamp or raw ms
+                        if (expiresAt.toDate) expiresMs = expiresAt.toDate().getTime();
+                        else if (expiresAt.seconds) expiresMs = expiresAt.seconds * 1000;
+                        else expiresMs = expiresAt;
+                    }
+
+                    if (expiresMs && Date.now() >= expiresMs) {
+                        // Ban expired client-side — server will auto-unban on register
+                        console.log('Ban appears expired, proceeding to app');
+                        // Don’t return — let normal flow continue, server will clean up
+                    } else {
+                        // Still active — show temp ban with countdown
+                        if (window.showBanOverlay) window.showBanOverlay(data.bannedReason || 'bad_behavior', expiresMs);
+                        return;
+                    }
+                }
+
+                if (data.onboardingComplete === true && data.age && data.age >= 18 && data.gender) {
                     // Returning user with completed onboarding — go to app
                     console.log('Onboarding complete, showing app for:', user.uid);
+                    window._onboardingComplete = true;
                     revealApp();
+                    detectAndSaveCountry(user, db);
                 } else {
                     // Onboarding not complete — show modal
                     console.log('Onboarding incomplete, showing modal for:', user.uid);
+                    window._onboardingComplete = false;
                     if (window.showAgeModal) window.showAgeModal();
                 }
             } catch (err) {

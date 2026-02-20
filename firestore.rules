@@ -5,7 +5,7 @@ service cloud.firestore {
     // users/{uid}: owner can read/write their own doc
     // cannot modify isPremium, isBanned, reputation (server-managed fields)
     match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
+      allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == uid;
       allow update: if request.auth != null && request.auth.uid == uid
         && (!request.resource.data.diff(resource.data).affectedKeys()
@@ -29,6 +29,22 @@ service cloud.firestore {
     // rooms/{roomId}: client can read if authenticated; writes are server-only
     match /rooms/{roomId} {
       allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // conversations/{convId}: users can read if they are a participant
+    // only server (Admin SDK) can write
+    match /conversations/{convId} {
+      allow read: if request.auth != null 
+        && request.auth.uid in resource.data.participants;
+      allow write: if false;
+    }
+
+    // messages/{conversationId}/chat/{messageId}: users can read if they are participants
+    // only server (Admin SDK) can write
+    match /messages/{conversationId}/chat/{messageId} {
+      allow read: if request.auth != null
+        && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
       allow write: if false;
     }
   }
