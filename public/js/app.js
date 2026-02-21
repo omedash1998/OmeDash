@@ -1612,64 +1612,71 @@ if (contactMailBtn) contactMailBtn.addEventListener('click', () => {
 });
 if (contactModal) contactModal.addEventListener('click', (e) => { if (e.target === contactModal) closeContactModal(); });
 
+// ── Lazy-loaded modal helper ──
+// Fetches HTML from data-src on first open and caches it.
+// Attaches the close-button listener after injection.
+const _modalCache = {};
+
+function _openLazyModal(modalEl, closeFn) {
+    if (!modalEl) return;
+    const inner = modalEl.querySelector('.modal-content');
+    const src = inner && inner.dataset.src;
+
+    function show() {
+        modalEl.style.display = 'flex';
+        modalEl.setAttribute('aria-hidden', 'false');
+    }
+
+    if (src && !_modalCache[src]) {
+        // First open – fetch and inject
+        inner.innerHTML = '<p style="text-align:center;padding:2em;color:#94a3b8;">Loading…</p>';
+        show();
+        fetch(src)
+            .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+            .then(function (html) {
+                _modalCache[src] = html;
+                inner.innerHTML = html;
+                // Re-attach close button inside the injected content
+                var closeBtn = inner.querySelector('.btn-ghost');
+                if (closeBtn) closeBtn.addEventListener('click', closeFn);
+            })
+            .catch(function () { inner.innerHTML = '<p style="text-align:center;padding:2em;color:#f87171;">Failed to load content.</p>'; });
+    } else if (src && _modalCache[src] && !inner.children.length) {
+        // Cached but DOM was cleared (shouldn't happen, safety net)
+        inner.innerHTML = _modalCache[src];
+        var closeBtn = inner.querySelector('.btn-ghost');
+        if (closeBtn) closeBtn.addEventListener('click', closeFn);
+        show();
+    } else {
+        show();
+    }
+}
+
+function _closeLazyModal(modalEl) {
+    if (!modalEl) return;
+    modalEl.style.display = 'none';
+    modalEl.setAttribute('aria-hidden', 'true');
+}
+
 // Terms of Service modal handlers
 const tosModal = document.getElementById('tosModal');
-const tosCloseBtn = document.getElementById('tosCloseBtn');
-
-function openTosModal() {
-    if (!tosModal) return;
-    tosModal.style.display = 'flex';
-    tosModal.setAttribute('aria-hidden', 'false');
-}
-
-function closeTosModal() {
-    if (!tosModal) return;
-    tosModal.style.display = 'none';
-    tosModal.setAttribute('aria-hidden', 'true');
-}
-
-if (tosCloseBtn) tosCloseBtn.addEventListener('click', closeTosModal);
-if (tosModal) tosModal.addEventListener('click', (e) => { if (e.target === tosModal) closeTosModal(); });
+function openTosModal() { _openLazyModal(tosModal, closeTosModal); }
+function closeTosModal() { _closeLazyModal(tosModal); }
+if (tosModal) tosModal.addEventListener('click', function (e) { if (e.target === tosModal) closeTosModal(); });
 
 // Privacy modal handlers
 const privacyModal = document.getElementById('privacyModal');
-const privacyCloseBtn = document.getElementById('privacyCloseBtn');
-
-function openPrivacyModal() {
-    if (!privacyModal) return;
-    privacyModal.style.display = 'flex';
-    privacyModal.setAttribute('aria-hidden', 'false');
-}
-
-function closePrivacyModal() {
-    if (!privacyModal) return;
-    privacyModal.style.display = 'none';
-    privacyModal.setAttribute('aria-hidden', 'true');
-}
-
-if (privacyCloseBtn) privacyCloseBtn.addEventListener('click', closePrivacyModal);
-if (privacyModal) privacyModal.addEventListener('click', (e) => { if (e.target === privacyModal) closePrivacyModal(); });
+function openPrivacyModal() { _openLazyModal(privacyModal, closePrivacyModal); }
+function closePrivacyModal() { _closeLazyModal(privacyModal); }
+if (privacyModal) privacyModal.addEventListener('click', function (e) { if (e.target === privacyModal) closePrivacyModal(); });
 
 // Rules modal handlers
 const rulesModal = document.getElementById('rulesModal');
-const rulesCloseBtn = document.getElementById('rulesCloseBtn');
+function openRulesModal() { _openLazyModal(rulesModal, closeRulesModal); }
+function closeRulesModal() { _closeLazyModal(rulesModal); }
+if (rulesModal) rulesModal.addEventListener('click', function (e) { if (e.target === rulesModal) closeRulesModal(); });
 
-function openRulesModal() {
-    if (!rulesModal) return;
-    rulesModal.style.display = 'flex';
-    rulesModal.setAttribute('aria-hidden', 'false');
-}
-
-function closeRulesModal() {
-    if (!rulesModal) return;
-    rulesModal.style.display = 'none';
-    rulesModal.setAttribute('aria-hidden', 'true');
-}
-
-if (rulesCloseBtn) rulesCloseBtn.addEventListener('click', closeRulesModal);
-if (rulesModal) rulesModal.addEventListener('click', (e) => { if (e.target === rulesModal) closeRulesModal(); });
-
-// About modal handlers
+// About modal handlers (inline – no lazy loading needed)
 const aboutModal = document.getElementById('aboutModal');
 const aboutCloseBtn = document.getElementById('aboutCloseBtn');
 
@@ -1686,7 +1693,7 @@ function closeAboutModal() {
 }
 
 if (aboutCloseBtn) aboutCloseBtn.addEventListener('click', closeAboutModal);
-if (aboutModal) aboutModal.addEventListener('click', (e) => { if (e.target === aboutModal) closeAboutModal(); });
+if (aboutModal) aboutModal.addEventListener('click', function (e) { if (e.target === aboutModal) closeAboutModal(); });
 
 // load preview on startup
 try { loadProfileFromStorage(); } catch (e) { }
