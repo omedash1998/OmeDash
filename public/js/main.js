@@ -407,7 +407,7 @@ import { joinQueue, leaveQueue } from './match.js';
         }
 
         function attachSocketHandlers() {
-            socket.on("matched", async ({ role: r, partner, partnerUid: pUid }) => {
+            socket.on("matched", async ({ role: r, partner, partnerUid: pUid, roomId: matchedRoomId }) => {
                 log("matched:", r, partner);
                 currentPartner = partner;
                 currentPartnerUid = pUid || null; // UID of partner for reporting
@@ -445,6 +445,28 @@ import { joinQueue, leaveQueue } from './match.js';
                     }
                 } catch (e) { /* ignore */ }
                 try { updateReportVisibility(); } catch (e) { }
+                // Fetch partner country from Firestore room and render badge
+                try {
+                    if (matchedRoomId && window._firebaseDb) {
+                        const { getDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                        const roomSnap = await getDoc(doc(window._firebaseDb, 'rooms', matchedRoomId));
+                        if (roomSnap.exists()) {
+                            const countries = roomSnap.data().participantCountries || {};
+                            const partnerCountry = countries[partner];
+                            if (partnerCountry && partnerCountry.countryEmoji) {
+                                const badge = document.createElement('div');
+                                badge.className = 'partner-country-badge';
+                                badge.textContent = partnerCountry.countryEmoji;
+                                const container = document.querySelector('.partner-video');
+                                if (container) {
+                                    const old = container.querySelector('.partner-country-badge');
+                                    if (old) old.remove();
+                                    container.appendChild(badge);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) { /* fail silently */ }
             });
 
             socket.on("offer", async (offer) => {
@@ -487,6 +509,7 @@ import { joinQueue, leaveQueue } from './match.js';
                 try { const big = document.getElementById('partnerLogoBig'); if (big) big.style.display = 'none'; } catch (e) { }
                 try { const small = document.getElementById('partnerLogoSmall'); if (small) { small.style.display = 'block'; small.style.opacity = '0.9'; } } catch (e) { }
                 try { if (chatStatusFlag) chatStatusFlag.textContent = ''; } catch (e) { }
+                try { const cb = document.querySelector('.partner-country-badge'); if (cb) cb.remove(); } catch (e) { }
                 nextBtn.disabled = true;
                 socket.emit("set-preferences", getPreferences());
                 socket.emit("ready");
