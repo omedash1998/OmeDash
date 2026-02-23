@@ -2053,3 +2053,17 @@ window._suppressMembershipPopup = window._suppressMembershipPopup || false;
 document.addEventListener('DOMContentLoaded', () => {
     try { startLocalStream(); } catch (e) { console.warn('startLocalStream failed on load', e); }
 }, { passive: true });
+
+// === Premium Script Loader ===
+// Dynamically loads premium UI scripts if the premium system is available.
+// Scripts self-initialize; no index.html edit required.
+(function loadPremiumScripts() {
+    var scripts = ['/js/premium/prefsUI.js', '/js/premium/devButton.js'];
+    scripts.forEach(function (src) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.defer = true;
+        s.onerror = function () { /* premium scripts optional */ };
+        document.body.appendChild(s);
+    });
+})();

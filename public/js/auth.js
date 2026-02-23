@@ -22,7 +22,7 @@ getDocs
 } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
 const firebaseConfig = {
-apiKey: "AIzaSyDOPBGXaHwBhI6YXEEHTtszhPA-Q_bT1f8",
+apiKey: "AIzaSyCADNGa11nE89TEgE8FEYdmJfXIr0AAzhY",
 authDomain: "omedash-a435a.firebaseapp.com",
 projectId: "omedash-a435a",
 storageBucket: "omedash-a435a.firebasestorage.app",
@@ -119,6 +119,9 @@ if (!user) {
 console.log('Authenticated:', user.uid);
 // Expose UID globally for socket registration
 window._firebaseUid = user.uid;
+
+// Signal to premium scripts (and any other listener) that auth is ready
+try { window.dispatchEvent(new CustomEvent('firebase-auth-ready', { detail: { uid: user.uid } })); } catch(_) {}
 
 // Hide login screen
 if (loginScreen) loginScreen.style.display = 'none';
