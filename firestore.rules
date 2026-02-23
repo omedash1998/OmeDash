@@ -2,14 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // users/{uid}: owner can read/write their own doc
-    // cannot modify isPremium, isBanned, reputation (server-managed fields)
+    // users/{uid}: owner can read own doc; update allowed but cannot touch server-managed fields
+    // Admin SDK (token.admin == true) has full write access
     match /users/{uid} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && request.auth.uid == uid;
       allow create: if request.auth != null && request.auth.uid == uid;
       allow update: if request.auth != null && request.auth.uid == uid
-        && (!request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['isPremium', 'isBanned', 'reputation']));
+        && !(request.resource.data.keys().hasAny(['isPremium', 'premiumExpiresAt', 'strikes', 'isBanned']));
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // adminActions: audit log for premium state changes — only Admin SDK can write
+    match /adminActions/{doc} {
+      allow read: if false;
+      allow write: if request.auth != null && request.auth.token.admin == true;
     }
 
     // waitingUsers/{uid}: only the authenticated owner can create/delete

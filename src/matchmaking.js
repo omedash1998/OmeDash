@@ -8,6 +8,44 @@ function setIoInstance(ioInstance) {
     io = ioInstance;
 }
 
+// Premium matcher integration — loaded lazily and only when PREMIUM_DEV is enabled
+let premiumMatcher = null;
+function getPremiumMatcher() {
+    if (process.env.PREMIUM_DEV !== 'true') return null;
+    if (!premiumMatcher) {
+        try { premiumMatcher = require('./premium/matcher'); } catch (_) { /* not available */ }
+    }
+    return premiumMatcher;
+}
+
+/**
+ * When premium is enabled and the queue has ≥3 users, try to find the
+ * best candidate for `aId` by scoring each waiting user.  Returns the
+ * index of the best candidate (or 0 to fall back to FIFO).
+ */
+async function findBestCandidate(aId) {
+    const matcher = getPremiumMatcher();
+    if (!matcher) return 0;
+
+    const { waiting, paused, socketUids } = state;
+    const aUid = socketUids.get(aId);
+    if (!aUid) return 0;
+
+    let bestIdx = 0;
+    let bestScore = 0;
+    for (let i = 0; i < waiting.length; i++) {
+        const cId = waiting[i];
+        if (paused.has(cId)) continue;
+        const cUid = socketUids.get(cId);
+        if (!cUid) continue;
+        try {
+            const boost = await matcher.scoreCandidate(aUid, cUid);
+            if (boost > bestScore) { bestScore = boost; bestIdx = i; }
+        } catch (_) { /* ignore scoring errors */ }
+    }
+    return bestIdx;
+}
+
 // Core matchmaking logic
 // Future Scalability: This memory-based queue limits the app to a single process.
 // To scale horizontally across multiple instances:
@@ -26,7 +64,12 @@ async function tryMatch() {
             if (paused.has(aId)) continue;
         } catch (e) { /* ignore */ }
 
-        const bId = waiting.shift();
+        // Premium boost: when enabled, pick the best candidate from the queue
+        let bestIdx = 0;
+        if (process.env.PREMIUM_DEV === 'true' && waiting.length > 1) {
+            try { bestIdx = await findBestCandidate(aId); } catch (_) { bestIdx = 0; }
+        }
+        const bId = waiting.splice(bestIdx, 1)[0];
         if (!bId) {
             waiting.unshift(aId);
             break;
