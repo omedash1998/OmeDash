@@ -602,18 +602,24 @@ function attachSocketHandlers() {
             const { fromUid, text, conversationId } = payload;
             console.log('Received private message from', fromUid);
             showToast('New message received');
-            // Refresh messages tab if it's open
+            // Refresh messages tab if it's visible (reads from Firestore)
             const ml = document.getElementById('messageList');
-            if (ml && ml.style.display === 'flex') {
+            if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
                 renderMessagesList();
             }
         } catch (e) { console.error('private-message-received handler failed', e); }
     });
 
-    // Message successfully sent
+    // Message successfully sent — refresh messages tab from Firestore
     socket.on('message-sent', (payload) => {
         try {
             console.log('Message sent successfully');
+            showToast('Message sent');
+            // Refresh messages tab if visible
+            const ml = document.getElementById('messageList');
+            if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
+                renderMessagesList();
+            }
         } catch (e) { /* ignore */ }
     });
 
@@ -735,122 +741,187 @@ function addMessageEntry(entry) {
     } catch (e) { console.warn('addMessageEntry failed', e); }
 }
 
-function renderMessagesList() {
+async function renderMessagesList() {
     const list = document.getElementById('messageList');
     if (!list) return;
-    // group messages by partner id
-    list.innerHTML = '';
-    const arr = loadMessages();
-    if (!arr.length) {
-        list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
-        return;
-    }
-    const convs = {};
-    arr.forEach(m => {
-        const id = m.id || 'unknown';
-        if (!convs[id]) convs[id] = [];
-        convs[id].push(m);
-    });
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:#4b6a86;">Loading messages...</div>';
 
-    // convert to array sorted by most recent message
-    const convArr = Object.keys(convs).map(id => ({ id, msgs: convs[id] }));
-    convArr.sort((a, b) => (b.msgs[0].when || 0) - (a.msgs[0].when || 0));
+    try {
+        const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
+        if (!user) {
+            list.innerHTML = '<div class="history-empty"><div class="history-empty-text">Not logged in</div></div>';
+            return;
+        }
 
-    convArr.forEach(conv => {
-        const id = conv.id;
-        const msgs = conv.msgs.slice().sort((x, y) => (x.when || 0) - (y.when || 0));
+        const uid = user.uid;
+        const db = window._firebaseDb;
 
-        const box = document.createElement('div'); box.className = 'conv-box';
-        const header = document.createElement('div'); header.className = 'conv-header';
-        const avatar = document.createElement('div'); avatar.style.width = '48px'; avatar.style.height = '36px'; avatar.style.borderRadius = '8px'; avatar.style.overflow = 'hidden'; avatar.style.display = 'flex'; avatar.style.alignItems = 'center'; avatar.style.justifyContent = 'center'; avatar.style.background = '#f6fbff'; avatar.style.border = '1px solid rgba(3,102,214,0.06)';
-        const ppic = (id !== 'unknown' && partnerProfiles[id] && partnerProfiles[id].pic) ? partnerProfiles[id].pic : null;
-        if (ppic) { const im = document.createElement('img'); im.src = ppic; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; avatar.appendChild(im); }
-        else { avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>'; }
+        // Query conversations where current user is a participant
+        const conversationsRef = collection(db, 'conversations');
+        const convQuery = query(conversationsRef, where('participants', 'array-contains', uid), orderBy('startedAt', 'desc'));
+        const convSnapshot = await getDocs(convQuery);
 
-        const titleWrap = document.createElement('div');
-        titleWrap.style.flex = '1';
-        const title = document.createElement('div'); title.className = 'conv-title';
-        const pname = (id !== 'unknown' && partnerProfiles[id] && partnerProfiles[id].name) ? partnerProfiles[id].name : (id === 'unknown' ? 'Unknown' : 'User ' + id.slice(0, 6));
-        title.textContent = pname;
-        const sub = document.createElement('div'); sub.className = 'conv-sub';
-        const last = msgs[msgs.length - 1];
-        sub.textContent = (last ? (new Date(last.when).toLocaleString() + ' — ' + (last.direction === 'out' ? 'You: ' : '') + (last.text.length > 40 ? last.text.slice(0, 40) + '...' : last.text)) : '');
-        titleWrap.appendChild(title); titleWrap.appendChild(sub);
+        if (convSnapshot.empty) {
+            list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Send a message from your connections to start</div></div>';
+            return;
+        }
 
-        header.appendChild(avatar); header.appendChild(titleWrap);
+        // Dynamically import doc-level Firestore helpers
+        const { doc: fbDocFn, getDoc: fbGetDocFn } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
 
-        // more button (delete conversation messages)
-        const moreBtn = document.createElement('button');
-        moreBtn.className = 'more-btn';
-        moreBtn.title = 'Delete conversation';
-        moreBtn.textContent = '⋮';
-        moreBtn.style.marginLeft = 'auto';
-        moreBtn.style.marginRight = '0';
-        moreBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openConfirmDeleteModal(
-                'Delete conversation',
-                'Delete this conversation and its messages?',
-                () => {
-                    try {
-                        const arr = loadMessages();
-                        const filtered = arr.filter(m => (m.id || 'unknown') !== id);
-                        saveMessages(filtered);
-                        renderMessagesList();
-                    } catch (err) { console.warn('delete conversation failed', err); }
+        list.innerHTML = '';
+        let hasMessages = false;
+
+        for (const convDoc of convSnapshot.docs) {
+            const convData = convDoc.data();
+            const conversationId = convDoc.id;
+            const participants = convData.participants || [];
+            const deletedFor = convData.deletedFor || {};
+
+            // Skip if soft-deleted for this user
+            if (deletedFor[uid] === true) continue;
+
+            const partnerUid = participants.find(p => p !== uid);
+            if (!partnerUid) continue;
+
+            // Fetch messages for this conversation
+            const msgsRef = collection(db, 'messages', conversationId, 'chat');
+            const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
+            const msgsSnapshot = await getDocs(msgsQuery);
+
+            // Only show conversations that have messages
+            if (msgsSnapshot.empty) continue;
+
+            hasMessages = true;
+
+            // Get partner profile from Firestore
+            const partnerRef = fbDocFn(db, 'users', partnerUid);
+            const partnerSnap = await fbGetDocFn(partnerRef);
+            let displayName = 'User';
+            let photoURL = null;
+            if (partnerSnap.exists()) {
+                const pd = partnerSnap.data();
+                displayName = pd.displayName || 'User';
+                photoURL = pd.photoURL || null;
+            }
+
+            // Build messages array from Firestore docs
+            const msgs = msgsSnapshot.docs.map(md => {
+                const mData = md.data();
+                let ts = Date.now();
+                if (mData.createdAt) {
+                    ts = mData.createdAt.toDate ? mData.createdAt.toDate().getTime() : mData.createdAt;
                 }
-            );
-        });
-        header.appendChild(moreBtn);
+                return {
+                    text: mData.text || '',
+                    fromUid: mData.fromUid,
+                    direction: mData.fromUid === uid ? 'out' : 'in',
+                    when: ts
+                };
+            });
 
-        const body = document.createElement('div'); body.className = 'conv-body';
-        // populate messages in body
-        msgs.forEach(m => {
-            const row = document.createElement('div');
-            row.style.display = 'flex'; row.style.marginBottom = '6px';
-            const bubble = document.createElement('div'); bubble.className = 'message-bubble ' + (m.direction === 'out' ? 'message-out' : 'message-in');
-            bubble.textContent = m.text;
-            if (m.direction === 'out') { row.style.justifyContent = 'flex-end'; row.appendChild(bubble); }
-            else { row.style.justifyContent = 'flex-start'; row.appendChild(bubble); }
-            body.appendChild(row);
-        });
+            // Build conversation box UI
+            const box = document.createElement('div'); box.className = 'conv-box';
+            const header = document.createElement('div'); header.className = 'conv-header';
+            const avatar = document.createElement('div'); avatar.style.width = '48px'; avatar.style.height = '36px'; avatar.style.borderRadius = '8px'; avatar.style.overflow = 'hidden'; avatar.style.display = 'flex'; avatar.style.alignItems = 'center'; avatar.style.justifyContent = 'center'; avatar.style.background = '#f6fbff'; avatar.style.border = '1px solid rgba(3,102,214,0.06)';
+            if (photoURL) { const im = document.createElement('img'); im.src = photoURL; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; avatar.appendChild(im); }
+            else { avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>'; }
 
-        const footer = document.createElement('div'); footer.className = 'conv-footer';
-        const input = document.createElement('input'); input.className = 'conv-input'; input.placeholder = 'Send a message...';
-        const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
-        footer.appendChild(input); footer.appendChild(send);
+            const titleWrap = document.createElement('div');
+            titleWrap.style.flex = '1';
+            const title = document.createElement('div'); title.className = 'conv-title';
+            title.textContent = displayName;
+            const sub = document.createElement('div'); sub.className = 'conv-sub';
+            const last = msgs[msgs.length - 1];
+            sub.textContent = (last ? (new Date(last.when).toLocaleString() + ' — ' + (last.direction === 'out' ? 'You: ' : '') + (last.text.length > 40 ? last.text.slice(0, 40) + '...' : last.text)) : '');
+            titleWrap.appendChild(title); titleWrap.appendChild(sub);
 
-        // header toggle
-        header.addEventListener('click', () => {
-            const open = body.classList.toggle('open');
-            if (open) body.scrollTop = body.scrollHeight;
-        });
+            header.appendChild(avatar); header.appendChild(titleWrap);
 
-        // send handler (require membership to message history contacts)
-        send.addEventListener('click', () => {
-            const txt = (input.value || '').trim();
-            if (!txt) return;
-            if (id === 'unknown') { alert('Cannot send to unknown'); return; }
-            try {
-                // messaging users from History requires membership — show subscription modal
-                try { openMembershipModal(); } catch (e) { }
-                return;
-                // NOTE: if membership flow is completed elsewhere, remove the above return to allow sending
-                socket.emit('chat-to', { target: id, text: txt });
-                addMessageEntry({ id: id, when: Date.now(), text: txt, direction: 'out' });
-                // append to body
-                const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'flex-end'; row.style.marginBottom = '6px';
-                const bubble = document.createElement('div'); bubble.className = 'message-bubble message-out'; bubble.textContent = txt;
-                row.appendChild(bubble); body.appendChild(row); body.scrollTop = body.scrollHeight;
-                input.value = '';
-            } catch (e) { alert('Send failed'); }
-        });
+            // more button (delete conversation messages)
+            const moreBtn = document.createElement('button');
+            moreBtn.className = 'more-btn';
+            moreBtn.title = 'Delete conversation';
+            moreBtn.textContent = '⋮';
+            moreBtn.style.marginLeft = 'auto';
+            moreBtn.style.marginRight = '0';
+            ((convId) => {
+                moreBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openConfirmDeleteModal(
+                        'Delete conversation',
+                        'Delete this conversation and its messages?',
+                        async () => {
+                            try {
+                                // Soft-delete via server
+                                if (socket) {
+                                    socket.emit('delete-conversation', { conversationId: convId });
+                                    showToast('Conversation deleted');
+                                    renderMessagesList();
+                                }
+                            } catch (err) { console.warn('delete conversation failed', err); }
+                        }
+                    );
+                });
+            })(conversationId);
+            header.appendChild(moreBtn);
 
-        box.appendChild(header);
-        box.appendChild(body);
-        box.appendChild(footer);
-        list.appendChild(box);
-    });
+            const body = document.createElement('div'); body.className = 'conv-body';
+            // populate messages in body
+            msgs.forEach(m => {
+                const row = document.createElement('div');
+                row.style.display = 'flex'; row.style.marginBottom = '6px';
+                const bubble = document.createElement('div'); bubble.className = 'message-bubble ' + (m.direction === 'out' ? 'message-out' : 'message-in');
+                bubble.textContent = m.text;
+                if (m.direction === 'out') { row.style.justifyContent = 'flex-end'; row.appendChild(bubble); }
+                else { row.style.justifyContent = 'flex-start'; row.appendChild(bubble); }
+                body.appendChild(row);
+            });
+
+            const footer = document.createElement('div'); footer.className = 'conv-footer';
+            const input = document.createElement('input'); input.className = 'conv-input'; input.placeholder = 'Send a message...';
+            const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
+            footer.appendChild(input); footer.appendChild(send);
+
+            // header toggle
+            header.addEventListener('click', () => {
+                const open = body.classList.toggle('open');
+                if (open) body.scrollTop = body.scrollHeight;
+            });
+
+            // send handler — emits via socket; server validates premium and saves to Firestore
+            ((pUid) => {
+                const doSend = () => {
+                    const txt = (input.value || '').trim();
+                    if (!txt) return;
+                    try {
+                        if (socket) {
+                            socket.emit('private-message', { recipientUid: pUid, text: txt });
+                            // Optimistically append the message to the UI
+                            const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'flex-end'; row.style.marginBottom = '6px';
+                            const bubble = document.createElement('div'); bubble.className = 'message-bubble message-out'; bubble.textContent = txt;
+                            row.appendChild(bubble); body.appendChild(row); body.scrollTop = body.scrollHeight;
+                            input.value = '';
+                        }
+                    } catch (e) { showToast('Send failed'); }
+                };
+                send.addEventListener('click', doSend);
+                input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSend(); } });
+            })(partnerUid);
+
+            box.appendChild(header);
+            box.appendChild(body);
+            box.appendChild(footer);
+            list.appendChild(box);
+        }
+
+        if (!hasMessages) {
+            list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Send a message from your connections to start</div></div>';
+        }
+    } catch (err) {
+        console.error('Error loading messages:', err);
+        list.innerHTML = '<div class="history-empty"><div class="history-empty-text">Error loading messages</div></div>';
+    }
 }
 
 function escapeHtml(s) {
@@ -1063,13 +1134,13 @@ async function renderHistoryList() {
                 }
             });
 
-            // Send button click - emit private message
+            // Send button click - emit private message via socket (server validates premium + saves to Firestore)
             chatBoxSend.addEventListener('click', async () => {
                 const txt = (chatBoxInput.value || '').trim();
                 if (!txt) return;
 
                 try {
-                    // Emit to server with recipient UID
+                    // Emit to server with recipient UID — server checks premium status
                     if (socket) {
                         socket.emit('private-message', {
                             recipientUid: partnerUid,
@@ -1092,6 +1163,11 @@ async function renderHistoryList() {
                 } catch (e) {
                     console.error('Send message failed', e);
                 }
+            });
+
+            // Also allow Enter key to send
+            chatBoxInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); chatBoxSend.click(); }
             });
 
             actions.appendChild(textBtn);

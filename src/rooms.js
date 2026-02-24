@@ -97,6 +97,7 @@ async function createQualifiedConversation(uidA, uidB, roomId, durationSeconds) 
 
         // Create conversation document using transaction to prevent duplicates
         const conversationRef = fireDb.collection('conversations').doc(conversationId);
+        let created = false;
         await fireDb.runTransaction(async (txn) => {
             const existingSnap = await txn.get(conversationRef);
             if (existingSnap.exists) {
@@ -109,10 +110,28 @@ async function createQualifiedConversation(uidA, uidB, roomId, durationSeconds) 
                 participantProfiles: participantProfiles,
                 roomId: roomId,
                 startedAt: admin.firestore.FieldValue.serverTimestamp(),
+                savedAt: admin.firestore.FieldValue.serverTimestamp(),
                 durationSeconds: durationSeconds,
                 qualified: true
             });
+            created = true;
         });
+
+        // Add lightweight refs to each user's conversations subcollection
+        if (created) {
+            for (const uid of [uidA, uidB]) {
+                try {
+                    await fireDb.collection('users').doc(uid)
+                        .collection('conversations').doc(conversationId)
+                        .set({
+                            convId: conversationId,
+                            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+                } catch (e) {
+                    console.error('Error writing user conversation ref for', uid, ':', e.message);
+                }
+            }
+        }
 
         console.log('✓ Qualified conversation created:', conversationId);
     } catch (err) {

@@ -18,18 +18,20 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.token.admin == true;
     }
 
-    // waitingUsers/{uid}: only the authenticated owner can create/delete
-    // must include uid, status, createdAt fields
+    // waitingUsers/{uid}: only the authenticated owner can create/read/delete
     match /waitingUsers/{uid} {
-      allow read: if false;
       allow create: if request.auth != null
         && request.auth.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'status', 'createdAt'])
-        && request.resource.data.uid == uid
-        && request.resource.data.status == 'waiting'
-        && request.resource.data.createdAt is timestamp;
+        && request.resource.data.uid == uid;
+      allow read: if request.auth != null && request.auth.uid == uid;
       allow delete: if request.auth != null && request.auth.uid == uid;
       allow update: if false;
+    }
+
+    // users/{uid}/conversations/{convId}: lightweight refs — owner can read, server-only writes
+    match /users/{uid}/conversations/{convId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
     }
 
     // rooms/{roomId}: client can read if authenticated; writes are server-only
