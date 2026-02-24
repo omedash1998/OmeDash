@@ -139,6 +139,29 @@ async function tryMatch() {
                 state: 'active'
             });
             console.log('Firestore room created:', roomRef.id);
+
+            // 10-second fallback: persist conversation proactively if room is still active
+            if (uidA && uidB) {
+                const { createQualifiedConversation } = require('./rooms');
+                const capturedRoomId = roomRef.id;
+                const capturedUidA = uidA;
+                const capturedUidB = uidB;
+                setTimeout(async () => {
+                    try {
+                        const roomSnap = await fireDb.collection('rooms').doc(capturedRoomId).get();
+                        if (roomSnap.exists) {
+                            const data = roomSnap.data();
+                            if (data.state === 'active') {
+                                const duration = Math.round((Date.now() - (data.createdAtMs || Date.now())) / 1000);
+                                if (duration >= 10) {
+                                    console.log('Fallback: persisting conversation for room', capturedRoomId);
+                                    await createQualifiedConversation(capturedUidA, capturedUidB, capturedRoomId, duration);
+                                }
+                            }
+                        }
+                    } catch (e) { console.error('Fallback conversation save failed:', e.message); }
+                }, 12000); // 12s to ensure 10s threshold is met
+            }
         } catch (err) {
             console.error('Error creating Firestore room:', err);
         }

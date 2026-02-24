@@ -463,6 +463,30 @@ module.exports = function (io) {
             }
         });
 
+        // Soft-delete a single conversation for the current user
+        socket.on('delete-conversation', async (payload) => {
+            try {
+                const uid = socket.uid || state.socketUids.get(socket.id);
+                if (!uid) { socket.emit('message-error', { message: 'Not authenticated' }); return; }
+                const conversationId = payload && payload.conversationId;
+                if (!conversationId) { socket.emit('message-error', { message: 'Missing conversationId' }); return; }
+
+                const convRef = fireDb.collection('conversations').doc(conversationId);
+                const convSnap = await convRef.get();
+                if (!convSnap.exists) { socket.emit('message-error', { message: 'Conversation not found' }); return; }
+
+                const participants = convSnap.data().participants || [];
+                if (!participants.includes(uid)) { socket.emit('message-error', { message: 'Not a participant' }); return; }
+
+                await convRef.update({ [`deletedFor.${uid}`]: true });
+                console.log('✓ Soft deleted conversation', conversationId, 'for', uid);
+                socket.emit('conversation-deleted', { conversationId });
+            } catch (e) {
+                console.error('delete-conversation handler failed', e);
+                socket.emit('message-error', { message: 'Failed to delete conversation' });
+            }
+        });
+
         socket.on('clear-history', async () => {
             try {
                 const uid = socket.uid || state.socketUids.get(socket.id);
