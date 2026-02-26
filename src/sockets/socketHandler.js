@@ -147,10 +147,29 @@ module.exports = function (io) {
             if (partnerId) io.to(partnerId).emit("ice-candidate", candidate);
         });
 
-        socket.on("chat", (payload) => {
+        socket.on("chat", async (payload) => {
             const partnerId = state.pairs[socket.id];
             if (partnerId) {
                 io.to(partnerId).emit("chat", { from: socket.id, text: payload.text });
+
+                // Persist message to Firestore: conversations/{conversationId}/messages/{auto}
+                try {
+                    const senderUid = state.socketUids.get(socket.id);
+                    const recipientUid = state.socketUids.get(partnerId);
+                    const roomId = state.socketRooms.get(socket.id);
+                    if (senderUid && recipientUid && roomId) {
+                        const [uid1, uid2] = [senderUid, recipientUid].sort();
+                        const conversationId = `${uid1}_${uid2}_${roomId}`;
+                        await fireDb.collection('conversations').doc(conversationId)
+                            .collection('messages').add({
+                                sender: senderUid,
+                                text: payload.text,
+                                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                    }
+                } catch (e) {
+                    console.error('Failed to persist chat message:', e.message);
+                }
             }
         });
 
@@ -422,6 +441,14 @@ module.exports = function (io) {
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
+                // Also save to the canonical conversations/{id}/messages subcollection
+                await fireDb.collection('conversations').doc(conversationId)
+                    .collection('messages').add({
+                        sender: senderUid,
+                        text: text,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
                 console.log('✓ Message saved:', conversationId, messageRef.id);
 
                 let delivered = false;
@@ -516,6 +543,45 @@ module.exports = function (io) {
 
                 await batch.commit();
                 console.log('✓ Soft deleted', snapshot.docs.length, 'conversations for:', uid);
+
+                // Delete all messages in these conversations
+                for (const doc of snapshot.docs) {
+                    const conversationId = doc.id;
+                    try {
+                        const messagesSnap = await fireDb.collection('messages').doc(conversationId)
+                            .collection('chat')
+                            .get();
+                        
+                        if (!messagesSnap.empty) {
+                            const messageBatch = fireDb.batch();
+                            messagesSnap.docs.forEach(msgDoc => {
+                                messageBatch.delete(msgDoc.ref);
+                            });
+                            await messageBatch.commit();
+                            console.log('✓ Deleted', messagesSnap.docs.length, 'messages from conversation:', conversationId);
+                        }
+                    } catch (msgErr) {
+                        console.error('Error deleting messages for conversation:', conversationId, msgErr);
+                    }
+
+                    // Also delete messages from conversations/{id}/messages subcollection
+                    try {
+                        const subMsgsSnap = await fireDb.collection('conversations').doc(conversationId)
+                            .collection('messages')
+                            .get();
+
+                        if (!subMsgsSnap.empty) {
+                            const subBatch = fireDb.batch();
+                            subMsgsSnap.docs.forEach(msgDoc => {
+                                subBatch.delete(msgDoc.ref);
+                            });
+                            await subBatch.commit();
+                            console.log('✓ Deleted', subMsgsSnap.docs.length, 'subcollection messages from:', conversationId);
+                        }
+                    } catch (subErr) {
+                        console.error('Error deleting subcollection messages:', conversationId, subErr);
+                    }
+                }
 
                 socket.emit('history-cleared');
 

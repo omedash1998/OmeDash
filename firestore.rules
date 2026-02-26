@@ -46,6 +46,14 @@ service cloud.firestore {
       allow read: if request.auth != null 
         && request.auth.uid in resource.data.participants;
       allow write: if false;
+
+      // conversations/{convId}/messages/{messageId}: live chat messages subcollection
+      // participants can read; only server (Admin SDK) can write
+      match /messages/{messageId} {
+        allow read: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+        allow write: if false;
+      }
     }
 
     // messages/{conversationId}/chat/{messageId}: users can read if they are participants

@@ -758,8 +758,15 @@ async function renderMessagesList() {
 
         // Query conversations where current user is a participant
         const conversationsRef = collection(db, 'conversations');
-        const convQuery = query(conversationsRef, where('participants', 'array-contains', uid), orderBy('startedAt', 'desc'));
+        const convQuery = query(conversationsRef, where('participants', 'array-contains', uid));
         const convSnapshot = await getDocs(convQuery);
+
+        // Sort client-side by startedAt descending (avoids needing a composite index)
+        const sortedDocs = convSnapshot.docs.slice().sort((a, b) => {
+            const aTime = a.data().startedAt ? (a.data().startedAt.toDate ? a.data().startedAt.toDate().getTime() : a.data().startedAt) : 0;
+            const bTime = b.data().startedAt ? (b.data().startedAt.toDate ? b.data().startedAt.toDate().getTime() : b.data().startedAt) : 0;
+            return bTime - aTime;
+        });
 
         if (convSnapshot.empty) {
             list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Send a message from your connections to start</div></div>';
@@ -772,7 +779,7 @@ async function renderMessagesList() {
         list.innerHTML = '';
         let hasMessages = false;
 
-        for (const convDoc of convSnapshot.docs) {
+        for (const convDoc of sortedDocs) {
             const convData = convDoc.data();
             const conversationId = convDoc.id;
             const participants = convData.participants || [];
@@ -784,13 +791,24 @@ async function renderMessagesList() {
             const partnerUid = participants.find(p => p !== uid);
             if (!partnerUid) continue;
 
-            // Fetch messages for this conversation
-            const msgsRef = collection(db, 'messages', conversationId, 'chat');
-            const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
-            const msgsSnapshot = await getDocs(msgsQuery);
+            // Fetch messages from conversations/{id}/messages subcollection (live chat)
+            let msgsSnapshot = { empty: true, docs: [] };
+            try {
+                const msgsRef = collection(db, 'conversations', conversationId, 'messages');
+                const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
+                msgsSnapshot = await getDocs(msgsQuery);
+            } catch (e) { console.warn('Error fetching messages for', conversationId, e); }
 
-            // Only show conversations that have messages
-            if (msgsSnapshot.empty) continue;
+            // Also fetch legacy messages from messages/{id}/chat (private messaging)
+            let legacyMsgsSnapshot = { empty: true, docs: [] };
+            try {
+                const legacyRef = collection(db, 'messages', conversationId, 'chat');
+                const legacyQuery = query(legacyRef, orderBy('createdAt', 'asc'));
+                legacyMsgsSnapshot = await getDocs(legacyQuery);
+            } catch (e) { /* ignore legacy fetch errors */ }
+
+            // Only show conversations that have messages in either location
+            if (msgsSnapshot.empty && legacyMsgsSnapshot.empty) continue;
 
             hasMessages = true;
 
@@ -805,20 +823,33 @@ async function renderMessagesList() {
                 photoURL = pd.photoURL || null;
             }
 
-            // Build messages array from Firestore docs
-            const msgs = msgsSnapshot.docs.map(md => {
+            // Build messages array from both Firestore subcollections
+            const allMsgDocs = [...msgsSnapshot.docs, ...legacyMsgsSnapshot.docs];
+            const msgs = allMsgDocs.map(md => {
                 const mData = md.data();
                 let ts = Date.now();
                 if (mData.createdAt) {
                     ts = mData.createdAt.toDate ? mData.createdAt.toDate().getTime() : mData.createdAt;
                 }
+                const senderUid = mData.sender || mData.fromUid;
                 return {
                     text: mData.text || '',
-                    fromUid: mData.fromUid,
-                    direction: mData.fromUid === uid ? 'out' : 'in',
+                    fromUid: senderUid,
+                    direction: senderUid === uid ? 'out' : 'in',
                     when: ts
                 };
+            }).sort((a, b) => a.when - b.when);
+            const msgs_ = msgs; // keep reference after sort
+            // Deduplicate by text+when (in case same message exists in both collections)
+            const seen = new Set();
+            const dedupMsgs = msgs.filter(m => {
+                const key = m.fromUid + '|' + m.text + '|' + m.when;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
             });
+            // Reassign for downstream use
+            const finalMsgs = dedupMsgs;
 
             // Build conversation box UI
             const box = document.createElement('div'); box.className = 'conv-box';
@@ -832,7 +863,7 @@ async function renderMessagesList() {
             const title = document.createElement('div'); title.className = 'conv-title';
             title.textContent = displayName;
             const sub = document.createElement('div'); sub.className = 'conv-sub';
-            const last = msgs[msgs.length - 1];
+            const last = finalMsgs[finalMsgs.length - 1];
             sub.textContent = (last ? (new Date(last.when).toLocaleString() + ' — ' + (last.direction === 'out' ? 'You: ' : '') + (last.text.length > 40 ? last.text.slice(0, 40) + '...' : last.text)) : '');
             titleWrap.appendChild(title); titleWrap.appendChild(sub);
 
@@ -868,7 +899,7 @@ async function renderMessagesList() {
 
             const body = document.createElement('div'); body.className = 'conv-body';
             // populate messages in body
-            msgs.forEach(m => {
+            finalMsgs.forEach(m => {
                 const row = document.createElement('div');
                 row.style.display = 'flex'; row.style.marginBottom = '6px';
                 const bubble = document.createElement('div'); bubble.className = 'message-bubble ' + (m.direction === 'out' ? 'message-out' : 'message-in');
