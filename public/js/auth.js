@@ -14,6 +14,7 @@ setDoc,
 deleteDoc,
 onSnapshot,
 serverTimestamp,
+addDoc,
 collection,
 query,
 where,
@@ -46,6 +47,8 @@ window.orderBy = orderBy;
 window.getDocs = getDocs;
 window.fbDoc = doc;
 window.fbGetDoc = getDoc;
+window.addDoc = addDoc;
+window.serverTimestamp = serverTimestamp;
 
 // Reveal main app content (remove app-hidden from all elements)
 function revealApp() {
@@ -66,11 +69,7 @@ await setDoc(userRef, {
     onboardingComplete: true
 }, { merge: true });
 console.log('Onboarding saved for:', user.uid);
-const savedSnap = await getDoc(userRef);
-const savedData = savedSnap.exists() ? savedSnap.data() : null;
-if (!savedData || !savedData.countryCode) {
-    detectAndSaveCountry(user, db);
-}
+detectAndSaveCountry(user, db);
 };
 
 // Sign in with Google (popup)
@@ -94,19 +93,12 @@ if (window._countryDetected) return;
 window._countryDetected = true;
 try {
     const res = await fetch('https://ipapi.co/json/');
-    if (!res.ok) return; // prevent 429 from breaking the app
-
     const data = await res.json();
-    if (!data || !data.country_code) return;
-
-    // Only save if country is still missing
-    const userRef = doc(db, 'users', user.uid);
-    const snap = await getDoc(userRef);
-    const userData = snap.exists() ? snap.data() : null;
-    if (!userData || !userData.countryCode) {
+    if (data && data.country_code) {
         const code = data.country_code;
         const name = data.country_name || code;
         const emoji = code.toUpperCase().replace(/./g, char => String.fromCodePoint(char.charCodeAt(0) + 127397));
+        const userRef = doc(db, 'users', user.uid);
         await setDoc(userRef, {
             countryName: name,
             countryCode: code,
@@ -115,8 +107,7 @@ try {
         console.log('Country info saved:', code, emoji);
     }
 } catch (err) {
-    // Fail silently — do not interrupt app flow
-    console.warn('Country detection failed:', err);
+    console.error('Error detecting country:', err);
 }
 }
 
@@ -201,9 +192,7 @@ try {
         console.log('Onboarding complete, showing app for:', user.uid);
         window._onboardingComplete = true;
         revealApp();
-        if (!data || !data.countryCode) {
-            detectAndSaveCountry(user, db);
-        }
+        detectAndSaveCountry(user, db);
     } else {
         // Onboarding not complete — show modal
         console.log('Onboarding incomplete, showing modal for:', user.uid);
@@ -242,9 +231,8 @@ try {
     return;
 }
 
-// Create waitingUsers doc — delete first to avoid hitting update-denied rule on re-join
+// Create waitingUsers doc (Cloud Function handles the rest)
 try {
-    try { await deleteDoc(doc(db, 'waitingUsers', uid)); } catch (e) { /* doc may not exist */ }
     await setDoc(doc(db, 'waitingUsers', uid), {
         uid: uid,
         status: 'waiting',
