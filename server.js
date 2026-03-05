@@ -37,14 +37,28 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     } else if (type === 'unban') {
       // ── Unban payment ──
       try {
-        await require('./src/firebase').fireDb.collection('users').doc(uid).update({
+        const { admin: fbAdminW, fireDb: fbDbW } = require('./src/firebase');
+        const deleteField = fbAdminW.firestore.FieldValue.delete();
+
+        await fbDbW.collection('users').doc(uid).update({
           isBanned: false,
-          bannedReason: null,
-          bannedExpiresAt: null,
           strikes: 0,
-          unbannedAt: require('./src/firebase').admin.firestore.FieldValue.serverTimestamp(),
+          bannedReason: deleteField,
+          bannedAt: deleteField,
+          bannedExpiresAt: deleteField,
+          unbannedAt: fbAdminW.firestore.FieldValue.serverTimestamp(),
         });
-        console.log(`Stripe unban completed for user: ${uid}`);
+
+        // Notify any connected socket so client hides the ban overlay
+        const wsState = require('./src/state');
+        for (const [sid, sUid] of wsState.socketUids.entries()) {
+          if (sUid === uid) {
+            const targetSocket = io.sockets.sockets.get(sid);
+            if (targetSocket) targetSocket.emit('unbanned');
+          }
+        }
+
+        console.log(`[Stripe Webhook] Unban completed for user: ${uid}`);
       } catch (err) {
         console.error('[Stripe Webhook] Unban Firestore update failed:', err.message);
       }

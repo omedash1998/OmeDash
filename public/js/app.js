@@ -681,6 +681,7 @@ function attachSocketHandlers() {
             console.log('History cleared successfully');
             renderHistoryList();
             showToast('History cleared');
+            if (clearHistoryBtn) clearHistoryBtn.disabled = true;
         } catch (e) { console.error('history-cleared handler failed', e); }
     });
 
@@ -1208,23 +1209,18 @@ async function renderHistoryList() {
             if (participantProfiles[partnerUid]) {
                 displayName = participantProfiles[partnerUid].displayName || 'User';
                 photoURL = participantProfiles[partnerUid].photoURL || null;
-            }
-            // Fallback: fetch from server API if no photo available
-            if (!photoURL) {
+            } else {
+                // Fallback: try reading partner doc (may fail if rules restrict it)
                 try {
-                    const auth = window._firebaseAuth;
-                    if (auth && auth.currentUser) {
-                        const token = await auth.currentUser.getIdToken();
-                        const profileRes = await fetch('/api/user-profile/' + partnerUid, {
-                            headers: { Authorization: 'Bearer ' + token }
-                        });
-                        if (profileRes.ok) {
-                            const profileData = await profileRes.json();
-                            if (profileData.photoURL) photoURL = profileData.photoURL;
-                            if (profileData.displayName && displayName === 'User') displayName = profileData.displayName;
-                        }
+                    const { getDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                    const partnerRef = doc(window._firebaseDb, 'users', partnerUid);
+                    const partnerSnap = await getDoc(partnerRef);
+                    if (partnerSnap.exists()) {
+                        const partnerData = partnerSnap.data();
+                        displayName = partnerData.displayName || 'User';
+                        photoURL = partnerData.photoURL || null;
                     }
-                } catch (_) { /* best-effort */ }
+                } catch (e) { /* permission denied — use defaults */ }
             }
 
             const durationSeconds = data.durationSeconds || 0;
@@ -1354,15 +1350,6 @@ async function renderHistoryList() {
             item.appendChild(chatBox);
             list.appendChild(item);
         }
-
-        // Update clear-history button based on whether any items are visible
-        try {
-            const clearBtn = document.getElementById('clearHistoryBtn');
-            if (clearBtn) {
-                const hasItems = list.querySelectorAll('.history-item').length > 0;
-                clearBtn.disabled = !hasItems;
-            }
-        } catch (e) { /* ignore */ }
     } catch (err) {
         console.error('Error loading conversations:', err);
         list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-text"\u003eError loading history\u003c/div\u003e\u003c/div\u003e';
@@ -1388,7 +1375,14 @@ function openHistoryModal() {
         document.getElementById('historyList').style.display = 'block';
         document.getElementById('messageList').style.display = 'none';
     }
-    // button state is now managed by renderHistoryList after it finishes
+    // enable/disable clear button depending on whether there's history
+    try {
+        const clearBtn = document.getElementById('clearHistoryBtn');
+        if (clearBtn) {
+            const arr = loadHistory();
+            clearBtn.disabled = !arr || arr.length === 0;
+        }
+    } catch (e) { }
 
     m.style.display = 'flex';
     m.setAttribute('aria-hidden', 'false');
@@ -1470,7 +1464,7 @@ async function doClearHistory() {
         await Promise.all(promises);
 
         // Also clear localStorage connections
-        try { localStorage.removeItem('vchat_history'); } catch (e) { }
+        try { localStorage.removeItem('chatHistory'); } catch (e) { }
 
         showToast('History cleared');
         closeClearHistoryConfirm();
@@ -1500,12 +1494,12 @@ if (historyTabConnections && historyTabMessages) {
         document.getElementById('messageList').style.display = 'none';
         try {
             if (clearHistoryBtn) {
+                // show and enable/disable based on stored history
                 clearHistoryBtn.style.display = '';
-                // Enable by default; renderHistoryList will set the correct state
-                clearHistoryBtn.disabled = false;
+                const arr = loadHistory();
+                clearHistoryBtn.disabled = !arr || arr.length === 0;
             }
         } catch (e) { }
-        renderHistoryList();
     });
     historyTabMessages.addEventListener('click', () => {
         historyTabMessages.classList.add('active');

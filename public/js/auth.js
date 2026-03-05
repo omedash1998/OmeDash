@@ -49,6 +49,7 @@ window.fbDoc = doc;
 window.fbGetDoc = getDoc;
 window.addDoc = addDoc;
 window.serverTimestamp = serverTimestamp;
+window.fbOnSnapshot = onSnapshot;
 
 // Reveal main app content (remove app-hidden from all elements)
 function revealApp() {
@@ -138,6 +139,7 @@ try {
     if (!userSnap.exists()) {
         // First-time user — create doc with onboardingComplete = false
         await setDoc(userRef, {
+            uid: user.uid,
             isPremium: false,
             isBanned: false,
             reputation: 0,
