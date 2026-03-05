@@ -114,58 +114,42 @@ module.exports = function (io) {
         });
 
         // ── Live preference updates from filter dropdowns ──────────
-        // Store the in-flight promise so ready/next/resume can await it
-        // (Socket.IO does NOT await async handlers before processing the next event)
-        socket._prefsReady = null;
+        socket.on('set-preferences', async (payload) => {
+            try {
+                const uid = socket.uid || state.socketUids.get(socket.id);
+                if (!uid) return;
 
-        socket.on('set-preferences', (payload) => {
-            socket._prefsReady = (async () => {
-                try {
-                    const uid = socket.uid || state.socketUids.get(socket.id);
-                    if (!uid) return;
+                const update = {};
+                // "gender" = the filterGender dropdown (who I want to talk to)
+                if (payload && payload.gender !== undefined) {
+                    const allowed = ['any', 'male', 'female'];
+                    if (allowed.includes(payload.gender)) {
+                        // Only premium users can set a non-'any' genderPref
+                        update.genderPref = payload.gender === 'any' ? null : payload.gender;
+                    }
+                }
+                // "myGender" = the user's own gender
+                if (payload && payload.myGender !== undefined) {
+                    const allowedG = ['male', 'female', 'any'];
+                    if (allowedG.includes(payload.myGender)) {
+                        update.gender = payload.myGender;
+                    }
+                }
 
-                    const update = {};
-                    // "gender" = the filterGender dropdown (who I want to talk to)
-                    if (payload && payload.gender !== undefined) {
-                        const allowed = ['any', 'male', 'female'];
-                        if (allowed.includes(payload.gender)) {
-                            // Only premium users can set a non-'any' genderPref
-                            update.genderPref = payload.gender === 'any' ? null : payload.gender;
-                        }
+                if (Object.keys(update).length > 0) {
+                    await fireDb.collection('users').doc(uid).set(update, { merge: true });
+                    // Invalidate matcher cache so changes take effect immediately
+                    if (process.env.PREMIUM_DEV === 'true') {
+                        try {
+                            const matcher = require('../premium/matcher');
+                            if (matcher.userCache) matcher.userCache.del(`user:${uid}`);
+                        } catch (_) { /* premium not loaded */ }
                     }
-                    // "myGender" = the user's own gender
-                    if (payload && payload.myGender !== undefined) {
-                        const allowedG = ['male', 'female', 'any'];
-                        if (allowedG.includes(payload.myGender)) {
-                            update.gender = payload.myGender;
-                        }
-                    }
-
-                    if (Object.keys(update).length > 0) {
-                        await fireDb.collection('users').doc(uid).set(update, { merge: true });
-                        // Invalidate matcher + expiry caches so changes take effect immediately
-                        if (process.env.PREMIUM_DEV === 'true') {
-                            try {
-                                const matcher = require('../premium/matcher');
-                                if (matcher.userCache) matcher.userCache.del(`user:${uid}`);
-                            } catch (_) { /* premium not loaded */ }
-                            try {
-                                const expiry = require('../premium/expiry');
-                                if (expiry.cache) expiry.cache.del(`premium:${uid}`);
-                            } catch (_) { /* premium not loaded */ }
-                        }
-                        // If user is already in queue, re-sweep with fresh prefs
-                        if (state.waiting.includes(socket.id)) {
-                            matchmaking.tryMatch();
-                        }
-                    }
-                } catch (e) { console.error('set-preferences handler failed', e); }
-            })();
+                }
+            } catch (e) { console.error('set-preferences handler failed', e); }
         });
 
-        socket.on("ready", async () => {
-            // Wait for any in-flight set-preferences write to finish first
-            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) {} }
+        socket.on("ready", () => {
             matchmaking.joinQueue(socket.id);
         });
 
@@ -189,10 +173,8 @@ module.exports = function (io) {
             matchmaking.tryMatch();
         });
 
-        socket.on("resume", async () => {
+        socket.on("resume", () => {
             console.log("User resumed", socket.id);
-            // Wait for any in-flight set-preferences write to finish first
-            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) {} }
             if (state.paused.has(socket.id)) state.paused.delete(socket.id);
             matchmaking.joinQueue(socket.id);
         });
@@ -213,36 +195,12 @@ module.exports = function (io) {
         });
 
         socket.on("chat", async (payload) => {
+            console.log('[CHAT-DEBUG-SERVER] chat from', socket.id, 'payload:', JSON.stringify(payload));
             const partnerId = state.pairs[socket.id];
+            console.log('[CHAT-DEBUG-SERVER] partnerId:', partnerId, 'pairs:', JSON.stringify(state.pairs));
             if (partnerId) {
+                console.log('[CHAT-DEBUG-SERVER] emitting chat to partner', partnerId);
                 io.to(partnerId).emit("chat", { from: socket.id, text: payload.text });
-
-                // Persist message to Firestore
-                try {
-                    const senderUid = state.socketUids.get(socket.id);
-                    const recipientUid = state.socketUids.get(partnerId);
-                    const roomId = state.socketRooms.get(socket.id);
-                    if (senderUid && recipientUid && roomId) {
-                        const [uid1, uid2] = [senderUid, recipientUid].sort();
-                        const conversationId = `${uid1}_${uid2}_${roomId}`;
-
-                        // Ensure the conversation document exists so client queries can find it
-                        const convRef = fireDb.collection('conversations').doc(conversationId);
-                        await convRef.set({
-                            participants: [uid1, uid2],
-                            roomId: roomId,
-                            startedAt: admin.firestore.FieldValue.serverTimestamp()
-                        }, { merge: true });
-
-                        await convRef.collection('messages').add({
-                            senderId: senderUid,
-                            text: payload.text,
-                            createdAt: admin.firestore.FieldValue.serverTimestamp()
-                        });
-                    }
-                } catch (e) {
-                    console.error('Failed to persist chat message:', e.message);
-                }
             }
         });
 
@@ -649,8 +607,6 @@ module.exports = function (io) {
         });
 
         socket.on("next", async () => {
-            // Wait for any in-flight set-preferences write to finish first
-            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) {} }
             const partnerId = state.pairs[socket.id];
             if (partnerId) {
                 await endFirestoreRoom(socket.id);
