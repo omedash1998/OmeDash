@@ -116,6 +116,8 @@ let selectedReportReason = null;
 let isReportSubmitting = false;
 // partnerUid is set when matched (server sends it); used for report
 let currentPartnerUid = null;
+let currentRoomId = null;
+let _convListenerUnsub = null;
 
 let pc = null;
 let localStream = null;
@@ -310,15 +312,34 @@ function hidePaymentOverlay() {
     if (paymentOverlay) paymentOverlay.style.display = 'none';
 }
 
-// Pay button → emit request-unban to server (Stripe placeholder)
-function handlePayUnban(btn) {
-    if (!socket || !socket.connected) {
-        showToast('Not connected to server');
-        return;
+// Pay button → redirect to Stripe unban checkout
+async function handlePayUnban(btn) {
+    try {
+        const auth = window._firebaseAuth;
+        if (!auth || !auth.currentUser) {
+            showToast('Not signed in');
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Processing...';
+        const token = await auth.currentUser.getIdToken();
+        const res = await fetch('/create-unban-session', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (data.url) {
+            window.location.href = data.url;
+        } else {
+            showToast('Payment error. Try again.');
+            btn.disabled = false;
+            btn.textContent = 'Pay & Restore Access';
+        }
+    } catch (err) {
+        console.error('Unban payment error:', err);
+        showToast('Payment error. Try again.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Pay & Restore Access'; }
     }
-    btn.disabled = true;
-    btn.textContent = 'Processing...';
-    socket.emit('request-unban');
 }
 
 if (payUnbanBtn) {
@@ -405,6 +426,7 @@ function attachSocketHandlers() {
         log("matched:", r, partner);
         currentPartner = partner;
         currentPartnerUid = pUid || null; // UID of partner for reporting
+        currentRoomId = matchedRoomId || null;
         partnerConnectedAt = Date.now();
         stText.textContent = "Matched - connecting...";
         try {
@@ -534,7 +556,10 @@ function attachSocketHandlers() {
     });
 
     socket.on("chat", (msg) => {
-        appendChatMessage("other", msg.text);
+        console.log('[CHAT-DEBUG] received chat event:', JSON.stringify(msg));
+        const text = (msg && msg.text) || msg;
+        console.log('[CHAT-DEBUG] calling appendChatMessage("other",', JSON.stringify(text) + ')');
+        appendChatMessage("other", text);
     });
 
     // Report acknowledgment — close modal, show toast, skip to next
@@ -596,30 +621,39 @@ function attachSocketHandlers() {
         } catch (e) { console.error('need_payment handler failed', e); }
     });
 
-    // Incoming private message from another user
+    // Incoming private message from another user — append inline without full re-render
     socket.on('private-message-received', (payload) => {
         try {
             const { fromUid, text, conversationId } = payload;
             console.log('Received private message from', fromUid);
             showToast('New message received');
-            // Refresh messages tab if it's visible (reads from Firestore)
             const ml = document.getElementById('messageList');
             if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
-                renderMessagesList();
+                // Try to append directly into the matching partner's chat box
+                const partnerBox = document.querySelector(`.conv-box[data-partner-uid="${fromUid}"]`);
+                if (partnerBox) {
+                    const body = partnerBox.querySelector('.conv-body');
+                    if (body) {
+                        const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'flex-start'; row.style.marginBottom = '6px';
+                        const bubble = document.createElement('div'); bubble.className = 'message-bubble message-in'; bubble.textContent = text;
+                        row.appendChild(bubble); body.appendChild(row);
+                        // Update subtitle
+                        const sub = partnerBox.querySelector('.conv-sub');
+                        if (sub) sub.textContent = new Date().toLocaleString() + ' — ' + (text.length > 40 ? text.slice(0, 40) + '...' : text);
+                        if (body.classList.contains('open')) body.scrollTop = body.scrollHeight;
+                    }
+                } else {
+                    renderMessagesList(); // new partner, need full render
+                }
             }
         } catch (e) { console.error('private-message-received handler failed', e); }
     });
 
-    // Message successfully sent — refresh messages tab from Firestore
+    // Message successfully sent — optimistic UI already in place, just show toast
     socket.on('message-sent', (payload) => {
         try {
             console.log('Message sent successfully');
             showToast('Message sent');
-            // Refresh messages tab if visible
-            const ml = document.getElementById('messageList');
-            if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
-                renderMessagesList();
-            }
         } catch (e) { /* ignore */ }
     });
 
@@ -647,7 +681,6 @@ function attachSocketHandlers() {
             console.log('History cleared successfully');
             renderHistoryList();
             showToast('History cleared');
-            if (clearHistoryBtn) clearHistoryBtn.disabled = true;
         } catch (e) { console.error('history-cleared handler failed', e); }
     });
 
@@ -664,6 +697,7 @@ function cleanupAfterPartnerLeft() {
     try { if (pc) pc.close(); } catch (e) { }
     pc = null;
     currentPartner = null;
+    currentRoomId = null;
     remoteVideo.srcObject = null;
     // disable chat UI when no partner is connected
     try { chatSend.disabled = true; } catch (e) { }
@@ -687,6 +721,8 @@ function clearChat() {
 }
 
 function appendChatMessage(who, text) {
+    console.log('[CHAT-DEBUG] appendChatMessage called:', who, text);
+    console.log('[CHAT-DEBUG] chatLog element:', chatLog, 'display:', chatLog ? getComputedStyle(chatLog).display : 'N/A', 'height:', chatLog ? chatLog.offsetHeight : 'N/A');
     const div = document.createElement("div");
     div.style.marginBottom = "6px";
 
@@ -741,7 +777,10 @@ function addMessageEntry(entry) {
     } catch (e) { console.warn('addMessageEntry failed', e); }
 }
 
-async function renderMessagesList() {
+let _msgSendCooldown = 0; // timestamp when cooldown expires
+async function renderMessagesList(force) {
+    // Skip re-render during send cooldown unless forced
+    if (!force && _msgSendCooldown > Date.now()) return;
     const list = document.getElementById('messageList');
     if (!list) return;
     list.innerHTML = '<div style="text-align:center;padding:20px;color:#4b6a86;">Loading messages...</div>';
@@ -779,83 +818,97 @@ async function renderMessagesList() {
         list.innerHTML = '';
         let hasMessages = false;
 
+        // ── Group conversations by partner UID ──
+        const partnerGroups = new Map(); // partnerUid -> { convIds, msgs, displayName, photoURL, latestConvId }
         for (const convDoc of sortedDocs) {
             const convData = convDoc.data();
             const conversationId = convDoc.id;
             const participants = convData.participants || [];
             const deletedFor = convData.deletedFor || {};
 
-            // Skip if soft-deleted for this user
-            if (deletedFor[uid] === true) continue;
+            const deleteMarker = deletedFor[uid];
+            let deleteCutoff = null;
+            if (deleteMarker === true) continue;
+            if (deleteMarker && deleteMarker.toDate) {
+                deleteCutoff = deleteMarker.toDate().getTime();
+            } else if (deleteMarker && typeof deleteMarker === 'object' && deleteMarker.seconds) {
+                deleteCutoff = deleteMarker.seconds * 1000;
+            }
 
             const partnerUid = participants.find(p => p !== uid);
             if (!partnerUid) continue;
 
-            // Fetch messages from conversations/{id}/messages subcollection (live chat)
             let msgsSnapshot = { empty: true, docs: [] };
             try {
                 const msgsRef = collection(db, 'conversations', conversationId, 'messages');
                 const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
                 msgsSnapshot = await getDocs(msgsQuery);
             } catch (e) { console.warn('Error fetching messages for', conversationId, e); }
+            if (msgsSnapshot.empty) continue;
 
-            // Also fetch legacy messages from messages/{id}/chat (private messaging)
-            let legacyMsgsSnapshot = { empty: true, docs: [] };
-            try {
-                const legacyRef = collection(db, 'messages', conversationId, 'chat');
-                const legacyQuery = query(legacyRef, orderBy('createdAt', 'asc'));
-                legacyMsgsSnapshot = await getDocs(legacyQuery);
-            } catch (e) { /* ignore legacy fetch errors */ }
-
-            // Only show conversations that have messages in either location
-            if (msgsSnapshot.empty && legacyMsgsSnapshot.empty) continue;
-
-            hasMessages = true;
-
-            // Get partner profile from Firestore
-            const partnerRef = fbDocFn(db, 'users', partnerUid);
-            const partnerSnap = await fbGetDocFn(partnerRef);
-            let displayName = 'User';
-            let photoURL = null;
-            if (partnerSnap.exists()) {
-                const pd = partnerSnap.data();
-                displayName = pd.displayName || 'User';
-                photoURL = pd.photoURL || null;
-            }
-
-            // Build messages array from both Firestore subcollections
-            const allMsgDocs = [...msgsSnapshot.docs, ...legacyMsgsSnapshot.docs];
-            const msgs = allMsgDocs.map(md => {
+            const msgs = msgsSnapshot.docs.map(md => {
                 const mData = md.data();
                 let ts = Date.now();
-                if (mData.createdAt) {
-                    ts = mData.createdAt.toDate ? mData.createdAt.toDate().getTime() : mData.createdAt;
+                if (mData.createdAt) { ts = mData.createdAt.toDate ? mData.createdAt.toDate().getTime() : mData.createdAt; }
+                const senderUid = mData.senderId || mData.sender || mData.fromUid;
+                return { text: mData.text || '', fromUid: senderUid, direction: senderUid === uid ? 'out' : 'in', when: ts };
+            }).filter(m => !deleteCutoff || m.when > deleteCutoff);
+            if (msgs.length === 0) continue;
+
+            if (!partnerGroups.has(partnerUid)) {
+                // Get partner profile from conversation's participantProfiles
+                let displayName = 'User', photoURL = null;
+                const participantProfiles = convData.participantProfiles || {};
+                if (participantProfiles[partnerUid]) {
+                    displayName = participantProfiles[partnerUid].displayName || 'User';
+                    photoURL = participantProfiles[partnerUid].photoURL || null;
                 }
-                const senderUid = mData.sender || mData.fromUid;
-                return {
-                    text: mData.text || '',
-                    fromUid: senderUid,
-                    direction: senderUid === uid ? 'out' : 'in',
-                    when: ts
-                };
-            }).sort((a, b) => a.when - b.when);
-            const msgs_ = msgs; // keep reference after sort
-            // Deduplicate by text+when (in case same message exists in both collections)
-            const seen = new Set();
-            const dedupMsgs = msgs.filter(m => {
-                const key = m.fromUid + '|' + m.text + '|' + m.when;
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-            });
-            // Reassign for downstream use
-            const finalMsgs = dedupMsgs;
+                // Fallback: fetch from server API if no photo available
+                if (!photoURL) {
+                    try {
+                        const auth = window._firebaseAuth;
+                        if (auth && auth.currentUser) {
+                            const token = await auth.currentUser.getIdToken();
+                            const profileRes = await fetch('/api/user-profile/' + partnerUid, {
+                                headers: { Authorization: 'Bearer ' + token }
+                            });
+                            if (profileRes.ok) {
+                                const profileData = await profileRes.json();
+                                if (profileData.photoURL) photoURL = profileData.photoURL;
+                                if (profileData.displayName && displayName === 'User') displayName = profileData.displayName;
+                            }
+                        }
+                    } catch (_) { /* best-effort */ }
+                }
+                partnerGroups.set(partnerUid, { convIds: [], msgs: [], displayName, photoURL, latestConvId: conversationId });
+            }
+            const group = partnerGroups.get(partnerUid);
+            group.convIds.push(conversationId);
+            group.msgs.push(...msgs);
+            // Track the conversation with the most recent message for sending
+            const lastMsg = msgs[msgs.length - 1];
+            const existingLast = group.msgs.length > msgs.length ? group.msgs[group.msgs.length - msgs.length - 1] : null;
+            const lmTime = convData.lastMessageAt ? (convData.lastMessageAt.toMillis ? convData.lastMessageAt.toMillis() : 0) : 0;
+            if (!group._latestTime || lmTime > group._latestTime) {
+                group._latestTime = lmTime;
+                group.latestConvId = conversationId;
+            }
+        }
+
+        // ── Render one box per partner ──
+        for (const [partnerUid, group] of partnerGroups) {
+            const finalMsgs = group.msgs.sort((a, b) => a.when - b.when);
+            const conversationId = group.latestConvId;
+            const displayName = group.displayName;
+            const photoURL = group.photoURL;
+            hasMessages = true;
 
             // Build conversation box UI
-            const box = document.createElement('div'); box.className = 'conv-box';
+            const box = document.createElement('div'); box.className = 'conv-box'; box.setAttribute('data-partner-uid', partnerUid);
             const header = document.createElement('div'); header.className = 'conv-header';
-            const avatar = document.createElement('div'); avatar.style.width = '48px'; avatar.style.height = '36px'; avatar.style.borderRadius = '8px'; avatar.style.overflow = 'hidden'; avatar.style.display = 'flex'; avatar.style.alignItems = 'center'; avatar.style.justifyContent = 'center'; avatar.style.background = '#f6fbff'; avatar.style.border = '1px solid rgba(3,102,214,0.06)';
-            if (photoURL) { const im = document.createElement('img'); im.src = photoURL; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; avatar.appendChild(im); }
+            const avatar = document.createElement('div'); avatar.style.width = '48px'; avatar.style.height = '36px'; avatar.style.borderRadius = '8px'; avatar.style.overflow = 'hidden'; avatar.style.display = 'flex'; avatar.style.alignItems = 'center'; avatar.style.justifyContent = 'center'; avatar.style.background = '#f6fbff'; avatar.style.border = '1px solid rgba(3,102,214,0.06)'; avatar.style.flexShrink = '0';
+            console.log('[Messages] Partner:', partnerUid, 'photoURL:', photoURL, 'displayName:', displayName);
+            if (photoURL) { const im = document.createElement('img'); im.src = photoURL; im.referrerPolicy = 'no-referrer'; im.crossOrigin = 'anonymous'; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; im.onerror = function() { console.warn('[Messages] Image failed to load:', photoURL); this.style.display = 'none'; }; avatar.appendChild(im); }
             else { avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>'; }
 
             const titleWrap = document.createElement('div');
@@ -876,7 +929,7 @@ async function renderMessagesList() {
             moreBtn.textContent = '⋮';
             moreBtn.style.marginLeft = 'auto';
             moreBtn.style.marginRight = '0';
-            ((convId) => {
+            ((allConvIds) => {
                 moreBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     openConfirmDeleteModal(
@@ -884,17 +937,28 @@ async function renderMessagesList() {
                         'Delete this conversation and its messages?',
                         async () => {
                             try {
-                                // Soft-delete via server
-                                if (socket) {
-                                    socket.emit('delete-conversation', { conversationId: convId });
-                                    showToast('Conversation deleted');
-                                    renderMessagesList();
+                                const user = window._firebaseAuth && window._firebaseAuth.currentUser;
+                                if (!user) { showToast('Not logged in'); return; }
+                                const { doc: fbDocFn, updateDoc: fbUpdateDocFn, serverTimestamp: fbServerTs } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                                // Soft-delete ALL conversations for this partner
+                                await Promise.all(allConvIds.map(cId =>
+                                    fbUpdateDocFn(fbDocFn(window._firebaseDb, 'conversations', cId), { [`deletedFor.${user.uid}`]: fbServerTs() })
+                                ));
+                                showToast('Conversation deleted');
+                                // Remove box from DOM instantly instead of full re-render
+                                box.remove();
+                                const remaining = list.querySelectorAll('.conv-box');
+                                if (remaining.length === 0) {
+                                    list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Send a message from your connections to start</div></div>';
                                 }
-                            } catch (err) { console.warn('delete conversation failed', err); }
+                            } catch (err) {
+                                console.warn('delete conversation failed', err);
+                                showToast('Failed to delete');
+                            }
                         }
                     );
                 });
-            })(conversationId);
+            })(group.convIds);
             header.appendChild(moreBtn);
 
             const body = document.createElement('div'); body.className = 'conv-body';
@@ -910,6 +974,7 @@ async function renderMessagesList() {
             });
 
             const footer = document.createElement('div'); footer.className = 'conv-footer';
+            footer.style.display = 'none'; // hidden until conversation is tapped open
             const input = document.createElement('input'); input.className = 'conv-input'; input.placeholder = 'Send a message...';
             const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
             footer.appendChild(input); footer.appendChild(send);
@@ -917,28 +982,44 @@ async function renderMessagesList() {
             // header toggle
             header.addEventListener('click', () => {
                 const open = body.classList.toggle('open');
+                footer.style.display = open ? '' : 'none';
                 if (open) body.scrollTop = body.scrollHeight;
             });
 
-            // send handler — emits via socket; server validates premium and saves to Firestore
-            ((pUid) => {
-                const doSend = () => {
+            // send handler — uses socket if available, otherwise writes directly to Firestore
+            ((pUid, cId) => {
+                const doSend = async () => {
                     const txt = (input.value || '').trim();
                     if (!txt) return;
                     try {
-                        if (socket) {
+                        if (socket && socket.connected) {
                             socket.emit('private-message', { recipientUid: pUid, text: txt });
-                            // Optimistically append the message to the UI
-                            const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'flex-end'; row.style.marginBottom = '6px';
-                            const bubble = document.createElement('div'); bubble.className = 'message-bubble message-out'; bubble.textContent = txt;
-                            row.appendChild(bubble); body.appendChild(row); body.scrollTop = body.scrollHeight;
-                            input.value = '';
+                        } else {
+                            // Fallback: write message directly to Firestore (works without socket/START)
+                            const user = window._firebaseAuth && window._firebaseAuth.currentUser;
+                            if (!user) { showToast('Not logged in'); return; }
+                            const { addDoc, serverTimestamp: fbServerTs, doc: fbDocFn, updateDoc: fbUpdateDocFn } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                            const msgsRef = collection(window._firebaseDb, 'conversations', cId, 'messages');
+                            await addDoc(msgsRef, { senderId: user.uid, text: txt, createdAt: fbServerTs() });
+                            await fbUpdateDocFn(fbDocFn(window._firebaseDb, 'conversations', cId), {
+                                lastMessageAt: fbServerTs(),
+                                lastMessageText: txt
+                            });
                         }
-                    } catch (e) { showToast('Send failed'); }
+                        // Optimistically append the message to the UI
+                        _msgSendCooldown = Date.now() + 3000; // suppress re-render for 3s
+                        const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'flex-end'; row.style.marginBottom = '6px';
+                        const bubble = document.createElement('div'); bubble.className = 'message-bubble message-out'; bubble.textContent = txt;
+                        row.appendChild(bubble); body.appendChild(row); body.scrollTop = body.scrollHeight;
+                        // Update subtitle with the new message
+                        const sub2 = box.querySelector('.conv-sub');
+                        if (sub2) sub2.textContent = new Date().toLocaleString() + ' — You: ' + (txt.length > 40 ? txt.slice(0, 40) + '...' : txt);
+                        input.value = '';
+                    } catch (e) { console.warn('Send failed', e); showToast('Send failed'); }
                 };
                 send.addEventListener('click', doSend);
                 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSend(); } });
-            })(partnerUid);
+            })(partnerUid, conversationId);
 
             box.appendChild(header);
             box.appendChild(body);
@@ -959,13 +1040,52 @@ function escapeHtml(s) {
     return (s + "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Real-time conversations listener — auto-refresh Messages tab when conversation docs change
+function startConversationListener() {
+    if (_convListenerUnsub) return; // already listening
+    try {
+        const user = window._firebaseAuth && window._firebaseAuth.currentUser;
+        if (!user || !window._firebaseDb || !window.fbOnSnapshot) return;
+        const db = window._firebaseDb;
+        const convRef = collection(db, 'conversations');
+        const q = query(convRef, where('participants', 'array-contains', user.uid));
+        _convListenerUnsub = window.fbOnSnapshot(q, () => {
+            const ml = document.getElementById('messageList');
+            if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
+                renderMessagesList();
+            }
+        }, (err) => { console.warn('Conversation listener error:', err.message); });
+    } catch (e) { console.warn('startConversationListener failed:', e.message); }
+}
+
+function stopConversationListener() {
+    if (_convListenerUnsub) { _convListenerUnsub(); _convListenerUnsub = null; }
+}
+
+// Start listener when auth is ready
+try {
+    const _checkAuth = setInterval(() => {
+        if (window._firebaseAuth && window._firebaseAuth.currentUser) {
+            clearInterval(_checkAuth);
+            startConversationListener();
+        }
+    }, 1000);
+    // Stop checking after 30s
+    setTimeout(() => clearInterval(_checkAuth), 30000);
+} catch (e) { /* ignore */ }
+
 chatSend.addEventListener("click", () => {
     const text = chatInput.value.trim();
+    console.log('[CHAT-DEBUG] Send clicked, text:', JSON.stringify(text), 'socket:', !!socket, 'partner:', currentPartner);
     if (!text) return;
     if (!socket || !currentPartner) { alert('Not connected to a partner'); return; }
     appendChatMessage("me", text);
     socket.emit("chat", { text });
+    console.log('[CHAT-DEBUG] emitted chat event to server');
     chatInput.value = "";
+
+    // Message persistence is handled server-side in the 'chat' handler
+    // (creates conversation doc + writes message atomically via Admin SDK)
 });
 
 chatInput.addEventListener("keydown", (e) => {
@@ -1072,27 +1192,39 @@ async function renderHistoryList() {
             const conversationId = docSnap.id;
             const participants = data.participants || [];
             const participantProfiles = data.participantProfiles || {};
-            const deletedFor = data.deletedFor || {};
+            const historyDeleted = data.historyDeletedFor || {};
 
-            // Skip if conversation is soft-deleted for current user
-            if (deletedFor[uid] === true) continue;
+            // Skip if connection history is cleared for current user
+            if (historyDeleted[uid]) continue;
 
             // Find partner UID
             const partnerUid = participants.find(p => p !== uid);
             if (!partnerUid) continue;
 
-            // Fetch live partner profile from Firestore users collection
-            const { getDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
-            const partnerRef = doc(window._firebaseDb, 'users', partnerUid);
-            const partnerSnap = await getDoc(partnerRef);
-
+            // Use partner profile from conversation doc (reading other users' docs is restricted by rules)
             let displayName = 'User';
             let photoURL = null;
 
-            if (partnerSnap.exists()) {
-                const partnerData = partnerSnap.data();
-                displayName = partnerData.displayName || 'User';
-                photoURL = partnerData.photoURL || null;
+            if (participantProfiles[partnerUid]) {
+                displayName = participantProfiles[partnerUid].displayName || 'User';
+                photoURL = participantProfiles[partnerUid].photoURL || null;
+            }
+            // Fallback: fetch from server API if no photo available
+            if (!photoURL) {
+                try {
+                    const auth = window._firebaseAuth;
+                    if (auth && auth.currentUser) {
+                        const token = await auth.currentUser.getIdToken();
+                        const profileRes = await fetch('/api/user-profile/' + partnerUid, {
+                            headers: { Authorization: 'Bearer ' + token }
+                        });
+                        if (profileRes.ok) {
+                            const profileData = await profileRes.json();
+                            if (profileData.photoURL) photoURL = profileData.photoURL;
+                            if (profileData.displayName && displayName === 'User') displayName = profileData.displayName;
+                        }
+                    }
+                } catch (_) { /* best-effort */ }
             }
 
             const durationSeconds = data.durationSeconds || 0;
@@ -1165,18 +1297,30 @@ async function renderHistoryList() {
                 }
             });
 
-            // Send button click - emit private message via socket (server validates premium + saves to Firestore)
-            chatBoxSend.addEventListener('click', async () => {
-                const txt = (chatBoxInput.value || '').trim();
-                if (!txt) return;
+            // Send button click - uses socket if available, otherwise writes directly to Firestore
+            ((cPartnerUid, cConvId) => {
+                chatBoxSend.addEventListener('click', async () => {
+                    const txt = (chatBoxInput.value || '').trim();
+                    if (!txt) return;
 
-                try {
-                    // Emit to server with recipient UID — server checks premium status
-                    if (socket) {
-                        socket.emit('private-message', {
-                            recipientUid: partnerUid,
-                            text: txt
-                        });
+                    try {
+                        if (socket && socket.connected) {
+                            socket.emit('private-message', {
+                                recipientUid: cPartnerUid,
+                                text: txt
+                            });
+                        } else {
+                            // Fallback: write directly to Firestore (works without socket/START)
+                            const user = window._firebaseAuth && window._firebaseAuth.currentUser;
+                            if (!user) { showToast('Not logged in'); return; }
+                            const { addDoc, serverTimestamp: fbServerTs, doc: fbDocFn, updateDoc: fbUpdateDocFn } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                            const msgsRef = collection(window._firebaseDb, 'conversations', cConvId, 'messages');
+                            await addDoc(msgsRef, { senderId: user.uid, text: txt, createdAt: fbServerTs() });
+                            await fbUpdateDocFn(fbDocFn(window._firebaseDb, 'conversations', cConvId), {
+                                lastMessageAt: fbServerTs(),
+                                lastMessageText: txt
+                            });
+                        }
 
                         // Clear input and close chat box
                         chatBoxInput.value = '';
@@ -1190,11 +1334,12 @@ async function renderHistoryList() {
                         ack.textContent = 'Sending...';
                         actions.appendChild(ack);
                         setTimeout(() => { try { actions.removeChild(ack); } catch (e) { } }, 2500);
+                    } catch (e) {
+                        console.error('Send message failed', e);
+                        showToast('Send failed');
                     }
-                } catch (e) {
-                    console.error('Send message failed', e);
-                }
-            });
+                });
+            })(partnerUid, conversationId);
 
             // Also allow Enter key to send
             chatBoxInput.addEventListener('keydown', (e) => {
@@ -1209,6 +1354,15 @@ async function renderHistoryList() {
             item.appendChild(chatBox);
             list.appendChild(item);
         }
+
+        // Update clear-history button based on whether any items are visible
+        try {
+            const clearBtn = document.getElementById('clearHistoryBtn');
+            if (clearBtn) {
+                const hasItems = list.querySelectorAll('.history-item').length > 0;
+                clearBtn.disabled = !hasItems;
+            }
+        } catch (e) { /* ignore */ }
     } catch (err) {
         console.error('Error loading conversations:', err);
         list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-text"\u003eError loading history\u003c/div\u003e\u003c/div\u003e';
@@ -1234,14 +1388,7 @@ function openHistoryModal() {
         document.getElementById('historyList').style.display = 'block';
         document.getElementById('messageList').style.display = 'none';
     }
-    // enable/disable clear button depending on whether there's history
-    try {
-        const clearBtn = document.getElementById('clearHistoryBtn');
-        if (clearBtn) {
-            const arr = loadHistory();
-            clearBtn.disabled = !arr || arr.length === 0;
-        }
-    } catch (e) { }
+    // button state is now managed by renderHistoryList after it finishes
 
     m.style.display = 'flex';
     m.setAttribute('aria-hidden', 'false');
@@ -1305,23 +1452,29 @@ function closeClearHistoryConfirm() {
     document.body.focus();
 }
 
-function doClearHistory() {
+async function doClearHistory() {
     try {
         const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
-        if (!user) {
-            showToast('Not logged in');
-            closeClearHistoryConfirm();
-            return;
-        }
+        if (!user) { showToast('Not logged in'); closeClearHistoryConfirm(); return; }
+        const db = window._firebaseDb;
+        if (!db) { showToast('Database not ready'); closeClearHistoryConfirm(); return; }
 
-        // Emit to server - server handles Firestore delete
-        if (socket) {
-            socket.emit('clear-history');
-            closeClearHistoryConfirm();
-        } else {
-            showToast('Connection error');
-            closeClearHistoryConfirm();
-        }
+        // Soft-delete connections only (separate field from Messages' deletedFor)
+        const { doc: fbDocFn, updateDoc: fbUpdateDocFn, serverTimestamp: fbServerTs } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+        const conversationsRef = collection(db, 'conversations');
+        const q = query(conversationsRef, where('participants', 'array-contains', user.uid));
+        const snap = await getDocs(q);
+        const promises = snap.docs.map(d =>
+            fbUpdateDocFn(fbDocFn(db, 'conversations', d.id), { [`historyDeletedFor.${user.uid}`]: true })
+        );
+        await Promise.all(promises);
+
+        // Also clear localStorage connections
+        try { localStorage.removeItem('vchat_history'); } catch (e) { }
+
+        showToast('History cleared');
+        closeClearHistoryConfirm();
+        renderHistoryList();
     } catch (e) {
         console.error('Clear history request failed', e);
         showToast('Failed to clear history');
@@ -1347,12 +1500,12 @@ if (historyTabConnections && historyTabMessages) {
         document.getElementById('messageList').style.display = 'none';
         try {
             if (clearHistoryBtn) {
-                // show and enable/disable based on stored history
                 clearHistoryBtn.style.display = '';
-                const arr = loadHistory();
-                clearHistoryBtn.disabled = !arr || arr.length === 0;
+                // Enable by default; renderHistoryList will set the correct state
+                clearHistoryBtn.disabled = false;
             }
         } catch (e) { }
+        renderHistoryList();
     });
     historyTabMessages.addEventListener('click', () => {
         historyTabMessages.classList.add('active');
@@ -1433,10 +1586,21 @@ if (settingsMenu) {
             try { openRulesModal(); } catch (e) { try { window.open('/rules', '_blank'); } catch (e2) { alert('Open Rules'); } }
         }
         else if (action === 'logout') {
-            // placeholder logout behavior
-            alert('Logged out (placeholder)');
+            // Disconnect socket and stop media
             try { if (socket) socket.disconnect(); } catch (e) { }
-            location.reload();
+            try { if (localStream) localStream.getTracks().forEach(t => t.stop()); } catch (e) { }
+            // Sign out from Firebase — onAuthStateChanged will show login screen
+            if (window._firebaseSignOut) {
+                window._firebaseSignOut().then(() => {
+                    document.querySelectorAll('.app-hidden-initial').forEach(el => el.classList.add('app-hidden'));
+                    location.reload();
+                }).catch(err => {
+                    console.error('Sign-out failed:', err);
+                    location.reload();
+                });
+            } else {
+                location.reload();
+            }
         }
     });
 
@@ -1682,9 +1846,25 @@ if (closeMembershipBtn) closeMembershipBtn.addEventListener('click', closeMember
 if (membershipModal) membershipModal.addEventListener('click', (e) => { if (e.target === membershipModal) closeMembershipModal(); });
 
 if (subscribeBtn) {
-    subscribeBtn.addEventListener('click', () => {
-        // placeholder: integrate Stripe Checkout / API on server
-        alert('Subscribe flow not implemented in this demo. Implement server-side Stripe Checkout to create sessions.');
+    subscribeBtn.addEventListener('click', async () => {
+        try {
+            const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
+            if (!user) {
+                console.error('User not authenticated');
+                return;
+            }
+            const token = await user.getIdToken();
+            const res = await fetch('/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+            const data = await res.json();
+            window.location.href = data.url;
+        } catch (err) {
+            console.error('Checkout session failed', err);
+        }
     });
 }
 
@@ -1932,10 +2112,27 @@ startBtn.addEventListener("click", async () => {
 // Update preferences when filters change
 // suppression flag prevents showing membership modal for a single programmatic change
 window._suppressMembershipPopup = window._suppressMembershipPopup || false;
+// Cached premium status — set by prefsUI.js or fetched on demand
+window._cachedPremiumStatus = window._cachedPremiumStatus || null;
+
+async function checkAndCachePremiumStatus() {
+    if (window._cachedPremiumStatus !== null) return window._cachedPremiumStatus;
+    try {
+        const auth = window._firebaseAuth;
+        if (!auth || !auth.currentUser) return false;
+        const token = await auth.currentUser.getIdToken();
+        const res = await fetch('/premium/status', { headers: { Authorization: 'Bearer ' + token } });
+        if (!res.ok) return false;
+        const data = await res.json();
+        window._cachedPremiumStatus = data.premium === true;
+        return window._cachedPremiumStatus;
+    } catch (_) { return false; }
+}
+
 [myGenderSelect, filterGenderSelect, filterCountrySelect].forEach(select => {
     // store previous value so we can revert if feature gated
     try { select.dataset.prev = select.value; } catch (e) { }
-    select.addEventListener("change", () => {
+    select.addEventListener("change", async () => {
         try {
             // if this change was programmatic and suppression flag is set, consume it
             if (window._suppressMembershipPopup) {
@@ -1944,16 +2141,17 @@ window._suppressMembershipPopup = window._suppressMembershipPopup || false;
                 if (socket && socket.connected) socket.emit("set-preferences", getPreferences());
                 return;
             }
-            // if user selects a gender filter (either their gender or looking-for) other than 'any',
-            // require membership: show membership modal and revert selection
-            // Only require membership when changing the "looking for" filter (not the user's own gender)
+            // filterGender: premium users can filter, non-premium get membership modal
             if (select === filterGenderSelect && select.value !== 'any') {
-                try { openMembershipModal(); } catch (e) { }
-                // revert to previous value
-                try { select.value = select.dataset.prev || 'any'; } catch (e) { }
-                return;
+                const isPremium = await checkAndCachePremiumStatus();
+                if (!isPremium) {
+                    try { openMembershipModal(); } catch (e) { }
+                    try { select.value = select.dataset.prev || 'any'; } catch (e) { }
+                    try { const mob = document.getElementById('mobileFilterGender'); if (mob) mob.value = select.value; } catch (e) { }
+                    return;
+                }
             }
-            // otherwise update stored previous and emit preferences
+            // All changes (myGender, filterGender, country) — persist via socket
             try { select.dataset.prev = select.value; } catch (e) { }
             if (socket && socket.connected) {
                 socket.emit("set-preferences", getPreferences());
@@ -2173,4 +2371,65 @@ document.addEventListener('DOMContentLoaded', () => {
         s.onerror = function () { /* premium scripts optional */ };
         document.body.appendChild(s);
     });
+})();
+
+// === Premium Crown Badge ===
+(function premiumCrownBadge() {
+    function showCrown() {
+        if (document.getElementById('premium-crown')) return;
+        var el = document.createElement('div');
+        el.id = 'premium-crown';
+        el.textContent = '👑';
+        Object.assign(el.style, {
+            position: 'absolute', top: '6px', right: '6px', zIndex: '10',
+            fontSize: '18px', lineHeight: '1', pointerEvents: 'none',
+            filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))'
+        });
+
+        // Place inside the local video wrapper so it sits over the user's own camera
+        var localVideo = document.getElementById('localVideo');
+        var container = localVideo ? localVideo.parentElement : null;
+        if (container) {
+            // Ensure the container is positioned so absolute child works
+            if (getComputedStyle(container).position === 'static') {
+                container.style.position = 'relative';
+            }
+            container.appendChild(el);
+        } else {
+            // Fallback: fixed to screen
+            el.style.position = 'fixed';
+            el.style.bottom = '12px';
+            el.style.right = '12px';
+            document.body.appendChild(el);
+        }
+        console.log('[Crown] Premium crown displayed');
+    }
+
+    async function check() {
+        try {
+            var auth = window._firebaseAuth;
+            if (!auth || !auth.currentUser) {
+                console.log('[Crown] No authenticated user, skipping');
+                return;
+            }
+            var token = await auth.currentUser.getIdToken();
+            var res = await fetch('/premium/status', {
+                headers: { Authorization: 'Bearer ' + token }
+            });
+            var data = await res.json();
+            console.log('[Crown] /premium/status response:', data);
+            if (data.premium === true) {
+                window._cachedPremiumStatus = true;
+                showCrown();
+            }
+        } catch (err) {
+            console.error('[Crown] Error checking premium status:', err);
+        }
+    }
+
+    window.addEventListener('firebase-auth-ready', function () {
+        console.log('[Crown] firebase-auth-ready fired, checking premium...');
+        check();
+    });
+    if (window._firebaseAuth && window._firebaseAuth.currentUser) check();
 })();

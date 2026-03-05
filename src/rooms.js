@@ -81,31 +81,50 @@ async function createQualifiedConversation(uidA, uidB, roomId, durationSeconds) 
             fireDb.collection('users').doc(uidB).get()
         ]);
 
+        // Helper: get photoURL from Firestore doc, fall back to Firebase Auth record
+        async function resolvePhoto(userSnap, uid) {
+            if (userSnap.exists && userSnap.data().photoURL) return userSnap.data().photoURL;
+            try {
+                const authUser = await admin.auth().getUser(uid);
+                return authUser.photoURL || null;
+            } catch (_) { return null; }
+        }
+
+        const [photoA, photoB] = await Promise.all([
+            resolvePhoto(userA, uidA),
+            resolvePhoto(userB, uidB)
+        ]);
+
         const profileA = {
             displayName: userA.exists ? (userA.data().displayName || 'User ' + uidA.slice(0, 6)) : 'User ' + uidA.slice(0, 6),
-            photoURL: userA.exists ? (userA.data().photoURL || null) : null
+            photoURL: photoA
         };
 
         const profileB = {
             displayName: userB.exists ? (userB.data().displayName || 'User ' + uidB.slice(0, 6)) : 'User ' + uidB.slice(0, 6),
-            photoURL: userB.exists ? (userB.data().photoURL || null) : null
+            photoURL: photoB
         };
 
         const participantProfiles = {};
         participantProfiles[uidA] = profileA;
         participantProfiles[uidB] = profileB;
 
-        // Create conversation document using transaction to prevent duplicates
+        // Create or update conversation document
         const conversationRef = fireDb.collection('conversations').doc(conversationId);
         let created = false;
-        await fireDb.runTransaction(async (txn) => {
-            const existingSnap = await txn.get(conversationRef);
-            if (existingSnap.exists) {
-                console.log('Conversation already exists:', conversationId);
-                return;
-            }
-
-            txn.set(conversationRef, {
+        const existingSnap = await conversationRef.get();
+        if (existingSnap.exists) {
+            // Conversation already created by the chat handler – merge profiles & metadata
+            console.log('Conversation already exists, merging profiles:', conversationId);
+            await conversationRef.set({
+                participantProfiles: participantProfiles,
+                startedAt: existingSnap.data().startedAt || admin.firestore.FieldValue.serverTimestamp(),
+                savedAt: admin.firestore.FieldValue.serverTimestamp(),
+                durationSeconds: durationSeconds,
+                qualified: true
+            }, { merge: true });
+        } else {
+            await conversationRef.set({
                 participants: [uidA, uidB],
                 participantProfiles: participantProfiles,
                 roomId: roomId,
@@ -115,7 +134,7 @@ async function createQualifiedConversation(uidA, uidB, roomId, durationSeconds) 
                 qualified: true
             });
             created = true;
-        });
+        }
 
         // Add lightweight refs to each user's conversations subcollection
         if (created) {

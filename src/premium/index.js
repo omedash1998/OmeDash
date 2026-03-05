@@ -6,6 +6,7 @@ const express = require('express');
 const { admin, fireDb } = require('../firebase');
 const expiry = require('./expiry');
 const mockController = require('./mockController');
+const { userCache: matcherUserCache } = require('./matcher');
 
 const router = express.Router();
 
@@ -101,6 +102,10 @@ router.post('/set-preferences', authMiddleware, async (req, res) => {
       },
       { merge: true }
     );
+
+    // Invalidate matcher & expiry caches so matchmaking immediately sees the new prefs
+    try { matcherUserCache.del(`user:${uid}`); } catch (_) {}
+    try { expiry.cache.del(`premium:${uid}`); } catch (_) {}
 
     return res.json({ ok: true });
   } catch (err) {
