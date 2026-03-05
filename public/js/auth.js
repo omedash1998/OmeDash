@@ -194,6 +194,22 @@ try {
         console.log('Onboarding complete, showing app for:', user.uid);
         window._onboardingComplete = true;
         revealApp();
+
+        // Sync "Your Gender" dropdown with the gender stored in Firestore
+        try {
+            const genderMap = { 'other': 'any', 'male': 'male', 'female': 'female' };
+            const mappedGender = genderMap[data.gender] || 'any';
+            const myGenderSel = document.getElementById('myGender');
+            if (myGenderSel && myGenderSel.value !== mappedGender) {
+                window._suppressMembershipPopup = true;
+                myGenderSel.value = mappedGender;
+                myGenderSel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            // Also sync mobile dropdown if it exists
+            const mobileMyGender = document.getElementById('mobileMyGender');
+            if (mobileMyGender) mobileMyGender.value = mappedGender;
+        } catch (e) { console.warn('Gender sync failed:', e); }
+
         detectAndSaveCountry(user, db);
     } else {
         // Onboarding not complete — show modal
