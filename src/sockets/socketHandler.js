@@ -154,6 +154,8 @@ module.exports = function (io) {
                                 if (expiry.cache) expiry.cache.del(`premium:${uid}`);
                             } catch (_) { /* premium not loaded */ }
                         }
+                        // Invalidate matchmaking gender cache
+                        try { matchmaking.invalidateGenderCache(uid); } catch (_) { }
                         // If user is already in queue, re-sweep with fresh prefs
                         if (state.waiting.includes(socket.id)) {
                             matchmaking.tryMatch();
