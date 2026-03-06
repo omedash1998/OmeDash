@@ -2488,3 +2488,64 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('firebase-auth-ready', function () { verify(); });
     }
 })();
+
+// === Unban Checkout Success Verification ===
+(function unbanSuccessHandler() {
+    var params = new URLSearchParams(window.location.search);
+    var sessionId = params.get('unban_success');
+    if (!sessionId) return;
+
+    // Clean the URL
+    var cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+
+    console.log('[Unban] Detected unban success, verifying session:', sessionId);
+
+    async function verify() {
+        try {
+            var auth = window._firebaseAuth;
+            if (!auth || !auth.currentUser) {
+                window.addEventListener('firebase-auth-ready', function () { verify(); });
+                return;
+            }
+
+            var token = await auth.currentUser.getIdToken();
+            var res = await fetch('/verify-unban', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: 'Bearer ' + token
+                },
+                body: JSON.stringify({ sessionId: sessionId })
+            });
+            var data = await res.json();
+            console.log('[Unban] Verification response:', data);
+
+            if (data.unbanned === true) {
+                // Hide ban overlays
+                var banOverlay = document.getElementById('banOverlay');
+                if (banOverlay) banOverlay.style.display = 'none';
+                var tempBanOverlay = document.getElementById('tempBanOverlay');
+                if (tempBanOverlay) tempBanOverlay.style.display = 'none';
+                var paymentOverlay = document.getElementById('paymentOverlay');
+                if (paymentOverlay) paymentOverlay.style.display = 'none';
+
+                if (typeof showToast === 'function') showToast('Account unbanned! Welcome back 🎉');
+                console.log('[Unban] Ban cleared successfully');
+
+                // Reload to get a clean state
+                setTimeout(function () { window.location.reload(); }, 1500);
+            } else {
+                console.warn('[Unban] Verification did not clear ban:', data);
+            }
+        } catch (err) {
+            console.error('[Unban] Verification failed:', err);
+        }
+    }
+
+    if (window._firebaseAuth && window._firebaseAuth.currentUser) {
+        verify();
+    } else {
+        window.addEventListener('firebase-auth-ready', function () { verify(); });
+    }
+})();

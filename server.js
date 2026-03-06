@@ -220,7 +220,7 @@ app.post('/create-unban-session', async (req, res) => {
         },
       ],
       metadata: { uid, type: 'unban' },
-      success_url: 'http://localhost:3000/?unban=success',
+      success_url: 'http://localhost:3000/?unban_success={CHECKOUT_SESSION_ID}',
       cancel_url: 'http://localhost:3000',
     });
 
@@ -228,6 +228,55 @@ app.post('/create-unban-session', async (req, res) => {
   } catch (error) {
     console.error('[Unban] Stripe error:', error);
     res.status(500).json({ error: 'Unban session failed' });
+  }
+});
+
+// ── Verify Unban Checkout (client-side fallback when webhooks can't reach localhost) ──
+app.post('/verify-unban', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    const decoded = await fbAdmin.auth().verifyIdToken(idToken);
+    const uid = decoded.uid;
+
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Missing sessionId' });
+    }
+
+    // Retrieve the checkout session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    // Verify payment was successful and belongs to this user
+    if (session.payment_status !== 'paid') {
+      return res.status(400).json({ error: 'Payment not completed' });
+    }
+    if (session.metadata && session.metadata.uid !== uid) {
+      return res.status(403).json({ error: 'Session does not belong to this user' });
+    }
+    if (!session.metadata || session.metadata.type !== 'unban') {
+      return res.status(400).json({ error: 'Not an unban session' });
+    }
+
+    // Clear ban
+    const deleteField = fbAdmin.firestore.FieldValue.delete();
+    await fbDb.collection('users').doc(uid).set({
+      isBanned: false,
+      strikes: 0,
+      bannedReason: deleteField,
+      bannedAt: deleteField,
+      bannedExpiresAt: deleteField,
+      unbannedAt: fbAdmin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    console.log(`[Verify Unban] Ban cleared for uid: ${uid}`);
+    res.json({ unbanned: true });
+  } catch (error) {
+    console.error('[Verify Unban] Error:', error.message);
+    res.status(500).json({ error: 'Verification failed' });
   }
 });
 
