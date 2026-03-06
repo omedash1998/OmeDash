@@ -909,7 +909,7 @@ async function renderMessagesList(force) {
             const header = document.createElement('div'); header.className = 'conv-header';
             const avatar = document.createElement('div'); avatar.style.width = '48px'; avatar.style.height = '36px'; avatar.style.borderRadius = '8px'; avatar.style.overflow = 'hidden'; avatar.style.display = 'flex'; avatar.style.alignItems = 'center'; avatar.style.justifyContent = 'center'; avatar.style.background = '#f6fbff'; avatar.style.border = '1px solid rgba(3,102,214,0.06)'; avatar.style.flexShrink = '0';
             console.log('[Messages] Partner:', partnerUid, 'photoURL:', photoURL, 'displayName:', displayName);
-            if (photoURL) { const im = document.createElement('img'); im.src = photoURL; im.referrerPolicy = 'no-referrer'; im.crossOrigin = 'anonymous'; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; im.onerror = function() { console.warn('[Messages] Image failed to load:', photoURL); this.style.display = 'none'; }; avatar.appendChild(im); }
+            if (photoURL) { const im = document.createElement('img'); im.src = photoURL; im.referrerPolicy = 'no-referrer'; im.crossOrigin = 'anonymous'; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; im.onerror = function () { console.warn('[Messages] Image failed to load:', photoURL); this.style.display = 'none'; }; avatar.appendChild(im); }
             else { avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>'; }
 
             const titleWrap = document.createElement('div');
@@ -2426,4 +2426,65 @@ document.addEventListener('DOMContentLoaded', () => {
         check();
     });
     if (window._firebaseAuth && window._firebaseAuth.currentUser) check();
+
+    // Expose check so checkout verification can trigger it
+    window._checkPremiumCrown = check;
+})();
+
+// === Checkout Success Verification ===
+// When Stripe redirects back after payment, verify the session and activate premium.
+// This is needed because Stripe webhooks cannot reach localhost during development.
+(function checkoutSuccessHandler() {
+    var params = new URLSearchParams(window.location.search);
+    var sessionId = params.get('checkout_success');
+    if (!sessionId) return;
+
+    // Clean the URL so refreshing doesn't re-trigger verification
+    var cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+
+    console.log('[Checkout] Detected checkout success, verifying session:', sessionId);
+
+    async function verify() {
+        try {
+            var auth = window._firebaseAuth;
+            if (!auth || !auth.currentUser) {
+                console.log('[Checkout] Waiting for auth...');
+                // Retry after auth is ready
+                window.addEventListener('firebase-auth-ready', function () { verify(); });
+                return;
+            }
+
+            var token = await auth.currentUser.getIdToken();
+            var res = await fetch('/verify-checkout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: 'Bearer ' + token
+                },
+                body: JSON.stringify({ sessionId: sessionId })
+            });
+            var data = await res.json();
+            console.log('[Checkout] Verification response:', data);
+
+            if (data.premium === true) {
+                window._cachedPremiumStatus = true;
+                // Show crown immediately
+                if (window._checkPremiumCrown) window._checkPremiumCrown();
+                // Show a success toast if available
+                if (typeof showToast === 'function') showToast('Premium activated! 👑');
+                console.log('[Checkout] Premium activated successfully');
+            } else {
+                console.warn('[Checkout] Verification did not activate premium:', data);
+            }
+        } catch (err) {
+            console.error('[Checkout] Verification failed:', err);
+        }
+    }
+
+    if (window._firebaseAuth && window._firebaseAuth.currentUser) {
+        verify();
+    } else {
+        window.addEventListener('firebase-auth-ready', function () { verify(); });
+    }
 })();

@@ -40,14 +40,14 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
         const { admin: fbAdminW, fireDb: fbDbW } = require('./src/firebase');
         const deleteField = fbAdminW.firestore.FieldValue.delete();
 
-        await fbDbW.collection('users').doc(uid).update({
+        await fbDbW.collection('users').doc(uid).set({
           isBanned: false,
           strikes: 0,
           bannedReason: deleteField,
           bannedAt: deleteField,
           bannedExpiresAt: deleteField,
           unbannedAt: fbAdminW.firestore.FieldValue.serverTimestamp(),
-        });
+        }, { merge: true });
 
         // Notify any connected socket so client hides the ban overlay
         const wsState = require('./src/state');
@@ -65,10 +65,12 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     } else {
       // ── Premium activation (type === 'premium' or legacy) ──
       try {
-        await require('./src/firebase').fireDb.collection('users').doc(uid).update({
+        await require('./src/firebase').fireDb.collection('users').doc(uid).set({
           premium: true,
           premiumSince: new Date(),
-        });
+          isPremium: true,
+          premiumExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        }, { merge: true });
         console.log(`[Stripe Webhook] Premium activated for uid: ${uid}`);
       } catch (err) {
         console.error('[Stripe Webhook] Firestore update failed:', err.message);
@@ -139,7 +141,7 @@ app.post('/create-checkout-session', async (req, res) => {
         },
       ],
       metadata: { uid, type: 'premium' },
-      success_url: 'http://localhost:3000',
+      success_url: 'http://localhost:3000?checkout_success={CHECKOUT_SESSION_ID}',
       cancel_url: 'http://localhost:3000',
     });
 
@@ -147,6 +149,49 @@ app.post('/create-checkout-session', async (req, res) => {
   } catch (error) {
     console.error('Stripe error:', error);
     res.status(500).json({ error: 'Stripe session failed' });
+  }
+});
+
+// ── Verify Checkout (client-side fallback when webhooks can't reach localhost) ──
+app.post('/verify-checkout', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    const decoded = await fbAdmin.auth().verifyIdToken(idToken);
+    const uid = decoded.uid;
+
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Missing sessionId' });
+    }
+
+    // Retrieve the checkout session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    // Verify payment was successful and belongs to this user
+    if (session.payment_status !== 'paid') {
+      return res.status(400).json({ error: 'Payment not completed' });
+    }
+    if (session.metadata && session.metadata.uid !== uid) {
+      return res.status(403).json({ error: 'Session does not belong to this user' });
+    }
+
+    // Activate premium
+    await fbDb.collection('users').doc(uid).set({
+      premium: true,
+      premiumSince: new Date(),
+      isPremium: true,
+      premiumExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    }, { merge: true });
+
+    console.log(`[Verify Checkout] Premium activated for uid: ${uid}`);
+    res.json({ premium: true });
+  } catch (error) {
+    console.error('[Verify Checkout] Error:', error.message);
+    res.status(500).json({ error: 'Verification failed' });
   }
 });
 
@@ -199,7 +244,7 @@ app.get('/premium/status', async (req, res) => {
     const uid = decoded.uid;
 
     const userSnap = await fbDb.collection('users').doc(uid).get();
-    const premium = userSnap.exists && userSnap.data().premium === true;
+    const premium = userSnap.exists && (userSnap.data().premium === true || userSnap.data().isPremium === true);
 
     res.json({ premium });
   } catch (error) {
