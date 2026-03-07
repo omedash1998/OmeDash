@@ -598,32 +598,59 @@ function attachSocketHandlers() {
         } catch (e) { console.error('need_payment handler failed', e); }
     });
 
-    // Incoming private message from another user
+    // Incoming private message from another user — inline append, no full re-render
     socket.on('private-message-received', (payload) => {
         try {
             const { fromUid, text, conversationId } = payload;
             console.log('Received private message from', fromUid);
             showToast('New message received');
-            // Refresh messages tab if it's open
-            const ml = document.getElementById('messageList');
-            if (ml && ml.style.display === 'flex') {
-                renderMessagesList();
-            }
+
+            // Inline append to Messages tab conversation (or create new one)
+            appendIncomingMessage(fromUid, text);
+
+            // Also inject into any open Connections tab chatbox for this partner
+            try {
+                const openChatBoxes = document.querySelectorAll('.history-chatbox[data-partner-uid="' + fromUid + '"]');
+                openChatBoxes.forEach(chatBox => {
+                    if (chatBox.style.display === 'flex') {
+                        const msgsArea = chatBox.querySelector('.history-chatbox-msgs');
+                        if (msgsArea) {
+                            const row = document.createElement('div');
+                            row.className = 'msg-row msg-row-in';
+                            const bubble = document.createElement('div');
+                            bubble.className = 'message-bubble message-in';
+                            bubble.style.fontSize = '12px';
+                            bubble.style.padding = '6px 10px';
+                            bubble.textContent = text;
+                            row.appendChild(bubble);
+                            msgsArea.appendChild(row);
+                            requestAnimationFrame(() => { msgsArea.scrollTop = msgsArea.scrollHeight; });
+                        }
+                    }
+                });
+            } catch (e) { /* ignore */ }
         } catch (e) { console.error('private-message-received handler failed', e); }
     });
 
-    // Message successfully sent
+    // Message successfully sent — remove sending state
     socket.on('message-sent', (payload) => {
         try {
             console.log('Message sent successfully');
+            // Clear any remaining sending indicators
+            document.querySelectorAll('.msg-sending').forEach(el => el.classList.remove('msg-sending'));
         } catch (e) { /* ignore */ }
     });
 
-    // Message error
+    // Message error — mark failed messages
     socket.on('message-error', (payload) => {
         try {
             const msg = (payload && payload.message) || 'Failed to send message';
             showToast(msg);
+            // Mark any sending messages as failed
+            document.querySelectorAll('.msg-sending').forEach(el => {
+                el.classList.remove('msg-sending');
+                el.classList.add('msg-failed');
+            });
         } catch (e) { /* ignore */ }
     });
 
@@ -737,16 +764,220 @@ function addMessageEntry(entry) {
     } catch (e) { console.warn('addMessageEntry failed', e); }
 }
 
+// ── Incremental message rendering ──────────────────────────────
+// Keyed DOM cache: partnerId → { box, body, sub, openState }
+const _convBoxes = new Map();
+let _lastMsgRenderCount = 0;
+
+// Helper: create a single message row element
+function _createMsgRow(text, direction, isSending) {
+    const row = document.createElement('div');
+    row.className = 'msg-row' + (direction === 'out' ? ' msg-row-out' : ' msg-row-in');
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble ' + (direction === 'out' ? 'message-out' : 'message-in');
+    if (isSending) bubble.classList.add('msg-sending');
+    bubble.textContent = text;
+    row.appendChild(bubble);
+    return row;
+}
+
+// Helper: build a full conv-box for a partner
+function _buildConvBox(id, msgs) {
+    const box = document.createElement('div');
+    box.className = 'conv-box conv-box-enter';
+    box.dataset.partnerId = id;
+
+    const header = document.createElement('div'); header.className = 'conv-header';
+    const avatar = document.createElement('div'); avatar.className = 'conv-avatar';
+    const ppic = (id !== 'unknown' && partnerProfiles[id] && partnerProfiles[id].pic) ? partnerProfiles[id].pic : null;
+    if (ppic) { const im = document.createElement('img'); im.src = ppic; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; avatar.appendChild(im); }
+    else { avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>'; }
+
+    const titleWrap = document.createElement('div');
+    titleWrap.style.flex = '1'; titleWrap.style.minWidth = '0';
+    const title = document.createElement('div'); title.className = 'conv-title';
+    const pname = (id !== 'unknown' && partnerProfiles[id] && partnerProfiles[id].name) ? partnerProfiles[id].name : (id === 'unknown' ? 'Unknown' : 'User ' + id.slice(0, 6));
+    title.textContent = pname;
+    const sub = document.createElement('div'); sub.className = 'conv-sub';
+    titleWrap.appendChild(title); titleWrap.appendChild(sub);
+    header.appendChild(avatar); header.appendChild(titleWrap);
+
+    // more button (delete conversation messages)
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'more-btn';
+    moreBtn.title = 'Delete conversation';
+    moreBtn.textContent = '⋮';
+    moreBtn.style.marginLeft = 'auto';
+    moreBtn.style.marginRight = '0';
+    moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openConfirmDeleteModal(
+            'Delete conversation',
+            'Delete this conversation and its messages?',
+            () => {
+                try {
+                    const arr = loadMessages();
+                    const filtered = arr.filter(m => (m.id || 'unknown') !== id);
+                    saveMessages(filtered);
+                    _convBoxes.delete(id);
+                    box.classList.add('conv-box-exit');
+                    setTimeout(() => { try { box.remove(); } catch (_) { } }, 250);
+                    // show empty if none left
+                    const list = document.getElementById('messageList');
+                    if (list && _convBoxes.size === 0) {
+                        setTimeout(() => {
+                            list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
+                        }, 260);
+                    }
+                } catch (err) { console.warn('delete conversation failed', err); }
+            }
+        );
+    });
+    header.appendChild(moreBtn);
+
+    const body = document.createElement('div'); body.className = 'conv-body';
+    // populate messages in body
+    if (msgs && msgs.length) {
+        msgs.forEach(m => {
+            body.appendChild(_createMsgRow(m.text, m.direction, false));
+        });
+    }
+
+    const footer = document.createElement('div'); footer.className = 'conv-footer';
+    const input = document.createElement('input'); input.className = 'conv-input'; input.placeholder = 'Send a message...';
+    const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
+    footer.appendChild(input); footer.appendChild(send);
+
+    // header toggle with smooth transition
+    header.addEventListener('click', () => {
+        const isOpen = body.classList.toggle('open');
+        if (isOpen) {
+            requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+        }
+    });
+
+    // Enter key sends message
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); send.click(); }
+    });
+
+    // send handler — optimistic UI
+    send.addEventListener('click', () => {
+        const txt = (input.value || '').trim();
+        if (!txt) return;
+        if (id === 'unknown') { showToast('Cannot send to unknown'); return; }
+
+        // Optimistic: immediately append the bubble
+        const row = _createMsgRow(txt, 'out', true);
+        body.appendChild(row);
+        if (!body.classList.contains('open')) body.classList.add('open');
+        requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+
+        // Save to local storage
+        addMessageEntry({ id: id, when: Date.now(), text: txt, direction: 'out' });
+
+        // Update subtitle preview
+        _updateConvSub(id);
+
+        // Clear input
+        input.value = '';
+        input.focus();
+
+        // Emit to server
+        try {
+            if (socket) {
+                socket.emit('private-message', { recipientUid: id, text: txt });
+            }
+        } catch (e) { console.error('Send message failed', e); }
+
+        // Remove sending state after short delay (server confirms)
+        setTimeout(() => {
+            try { row.querySelector('.msg-sending')?.classList.remove('msg-sending'); } catch (_) { }
+        }, 1500);
+    });
+
+    box.appendChild(header);
+    box.appendChild(body);
+    box.appendChild(footer);
+
+    // Cache references
+    _convBoxes.set(id, { box, body, sub, title });
+
+    // Trigger entrance animation
+    requestAnimationFrame(() => { box.classList.remove('conv-box-enter'); });
+
+    return box;
+}
+
+// Update the subtitle preview for a given partner
+function _updateConvSub(id) {
+    const entry = _convBoxes.get(id);
+    if (!entry || !entry.sub) return;
+    const arr = loadMessages();
+    const msgs = arr.filter(m => (m.id || 'unknown') === id);
+    msgs.sort((a, b) => (a.when || 0) - (b.when || 0));
+    const last = msgs[msgs.length - 1];
+    if (last) {
+        entry.sub.textContent = new Date(last.when).toLocaleString() + ' — ' + (last.direction === 'out' ? 'You: ' : '') + (last.text.length > 40 ? last.text.slice(0, 40) + '...' : last.text);
+    }
+}
+
+// Append a single incoming message to an existing (or new) conversation
+function appendIncomingMessage(fromUid, text) {
+    // Save to localStorage
+    addMessageEntry({ id: fromUid, when: Date.now(), text: text, direction: 'in' });
+
+    const list = document.getElementById('messageList');
+    const isVisible = list && list.style.display === 'flex';
+
+    if (!isVisible) return; // Messages tab not open, nothing to render
+
+    // Remove empty placeholder if present
+    const emptyEl = list.querySelector('.history-empty');
+    if (emptyEl) emptyEl.remove();
+
+    let entry = _convBoxes.get(fromUid);
+    if (entry) {
+        // Conversation exists — append inline
+        const row = _createMsgRow(text, 'in', false);
+        entry.body.appendChild(row);
+        _updateConvSub(fromUid);
+        // Auto-scroll if conversation is open
+        if (entry.body.classList.contains('open')) {
+            requestAnimationFrame(() => { entry.body.scrollTop = entry.body.scrollHeight; });
+        } else {
+            // Show unread indicator pulse on header
+            entry.box.classList.add('conv-unread-pulse');
+            setTimeout(() => { entry.box.classList.remove('conv-unread-pulse'); }, 2000);
+        }
+        // Move conversation to top of list
+        if (list.firstChild !== entry.box) {
+            list.insertBefore(entry.box, list.firstChild);
+        }
+    } else {
+        // New conversation — build and prepend
+        const msgs = loadMessages().filter(m => (m.id || 'unknown') === fromUid);
+        msgs.sort((a, b) => (a.when || 0) - (b.when || 0));
+        const box = _buildConvBox(fromUid, msgs);
+        _updateConvSub(fromUid);
+        list.insertBefore(box, list.firstChild);
+    }
+}
+
 function renderMessagesList() {
     const list = document.getElementById('messageList');
     if (!list) return;
-    // group messages by partner id
-    list.innerHTML = '';
+
     const arr = loadMessages();
     if (!arr.length) {
+        // Clear cache and show empty state
+        _convBoxes.clear();
         list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
+        _lastMsgRenderCount = 0;
         return;
     }
+
+    // Group messages by partner id
     const convs = {};
     arr.forEach(m => {
         const id = m.id || 'unknown';
@@ -754,105 +985,50 @@ function renderMessagesList() {
         convs[id].push(m);
     });
 
-    // convert to array sorted by most recent message
+    // Sort by most recent message
     const convArr = Object.keys(convs).map(id => ({ id, msgs: convs[id] }));
     convArr.sort((a, b) => (b.msgs[0].when || 0) - (a.msgs[0].when || 0));
 
-    convArr.forEach(conv => {
+    // Remove empty placeholder if exists
+    const emptyEl = list.querySelector('.history-empty');
+    if (emptyEl) emptyEl.remove();
+
+    // Track which partner IDs are current
+    const currentIds = new Set(convArr.map(c => c.id));
+
+    // Remove boxes for deleted conversations
+    for (const [id, entry] of _convBoxes.entries()) {
+        if (!currentIds.has(id)) {
+            entry.box.remove();
+            _convBoxes.delete(id);
+        }
+    }
+
+    // Add/update boxes
+    convArr.forEach((conv, idx) => {
         const id = conv.id;
         const msgs = conv.msgs.slice().sort((x, y) => (x.when || 0) - (y.when || 0));
 
-        const box = document.createElement('div'); box.className = 'conv-box';
-        const header = document.createElement('div'); header.className = 'conv-header';
-        const avatar = document.createElement('div'); avatar.style.width = '48px'; avatar.style.height = '36px'; avatar.style.borderRadius = '8px'; avatar.style.overflow = 'hidden'; avatar.style.display = 'flex'; avatar.style.alignItems = 'center'; avatar.style.justifyContent = 'center'; avatar.style.background = '#f6fbff'; avatar.style.border = '1px solid rgba(3,102,214,0.06)';
-        const ppic = (id !== 'unknown' && partnerProfiles[id] && partnerProfiles[id].pic) ? partnerProfiles[id].pic : null;
-        if (ppic) { const im = document.createElement('img'); im.src = ppic; im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover'; avatar.appendChild(im); }
-        else { avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>'; }
+        let entry = _convBoxes.get(id);
+        if (entry) {
+            // Existing conversation — only update subtitle, preserve everything else
+            _updateConvSub(id);
 
-        const titleWrap = document.createElement('div');
-        titleWrap.style.flex = '1';
-        const title = document.createElement('div'); title.className = 'conv-title';
-        const pname = (id !== 'unknown' && partnerProfiles[id] && partnerProfiles[id].name) ? partnerProfiles[id].name : (id === 'unknown' ? 'Unknown' : 'User ' + id.slice(0, 6));
-        title.textContent = pname;
-        const sub = document.createElement('div'); sub.className = 'conv-sub';
-        const last = msgs[msgs.length - 1];
-        sub.textContent = (last ? (new Date(last.when).toLocaleString() + ' — ' + (last.direction === 'out' ? 'You: ' : '') + (last.text.length > 40 ? last.text.slice(0, 40) + '...' : last.text)) : '');
-        titleWrap.appendChild(title); titleWrap.appendChild(sub);
-
-        header.appendChild(avatar); header.appendChild(titleWrap);
-
-        // more button (delete conversation messages)
-        const moreBtn = document.createElement('button');
-        moreBtn.className = 'more-btn';
-        moreBtn.title = 'Delete conversation';
-        moreBtn.textContent = '⋮';
-        moreBtn.style.marginLeft = 'auto';
-        moreBtn.style.marginRight = '0';
-        moreBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openConfirmDeleteModal(
-                'Delete conversation',
-                'Delete this conversation and its messages?',
-                () => {
-                    try {
-                        const arr = loadMessages();
-                        const filtered = arr.filter(m => (m.id || 'unknown') !== id);
-                        saveMessages(filtered);
-                        renderMessagesList();
-                    } catch (err) { console.warn('delete conversation failed', err); }
-                }
-            );
-        });
-        header.appendChild(moreBtn);
-
-        const body = document.createElement('div'); body.className = 'conv-body';
-        // populate messages in body
-        msgs.forEach(m => {
-            const row = document.createElement('div');
-            row.style.display = 'flex'; row.style.marginBottom = '6px';
-            const bubble = document.createElement('div'); bubble.className = 'message-bubble ' + (m.direction === 'out' ? 'message-out' : 'message-in');
-            bubble.textContent = m.text;
-            if (m.direction === 'out') { row.style.justifyContent = 'flex-end'; row.appendChild(bubble); }
-            else { row.style.justifyContent = 'flex-start'; row.appendChild(bubble); }
-            body.appendChild(row);
-        });
-
-        const footer = document.createElement('div'); footer.className = 'conv-footer';
-        const input = document.createElement('input'); input.className = 'conv-input'; input.placeholder = 'Send a message...';
-        const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
-        footer.appendChild(input); footer.appendChild(send);
-
-        // header toggle
-        header.addEventListener('click', () => {
-            const open = body.classList.toggle('open');
-            if (open) body.scrollTop = body.scrollHeight;
-        });
-
-        // send handler (require membership to message history contacts)
-        send.addEventListener('click', () => {
-            const txt = (input.value || '').trim();
-            if (!txt) return;
-            if (id === 'unknown') { alert('Cannot send to unknown'); return; }
-            try {
-                // messaging users from History requires membership — show subscription modal
-                try { openMembershipModal(); } catch (e) { }
-                return;
-                // NOTE: if membership flow is completed elsewhere, remove the above return to allow sending
-                socket.emit('chat-to', { target: id, text: txt });
-                addMessageEntry({ id: id, when: Date.now(), text: txt, direction: 'out' });
-                // append to body
-                const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'flex-end'; row.style.marginBottom = '6px';
-                const bubble = document.createElement('div'); bubble.className = 'message-bubble message-out'; bubble.textContent = txt;
-                row.appendChild(bubble); body.appendChild(row); body.scrollTop = body.scrollHeight;
-                input.value = '';
-            } catch (e) { alert('Send failed'); }
-        });
-
-        box.appendChild(header);
-        box.appendChild(body);
-        box.appendChild(footer);
-        list.appendChild(box);
+            // Ensure correct order: conversation at position idx
+            const currentChild = list.children[idx];
+            if (currentChild !== entry.box) {
+                list.insertBefore(entry.box, currentChild || null);
+            }
+        } else {
+            // New conversation — build full box
+            const box = _buildConvBox(id, msgs);
+            _updateConvSub(id);
+            const refChild = list.children[idx] || null;
+            list.insertBefore(box, refChild);
+        }
     });
+
+    _lastMsgRenderCount = arr.length;
 }
 
 function escapeHtml(s) {
@@ -1028,65 +1204,127 @@ async function renderHistoryList() {
 
             // Create inline chat box (hidden by default)
             const chatBox = document.createElement('div');
+            chatBox.className = 'history-chatbox';
             chatBox.style.display = 'none';
             chatBox.style.marginTop = '8px';
             chatBox.style.width = '100%';
-            chatBox.style.display = 'none';
+            chatBox.style.flexDirection = 'column';
+            chatBox.style.gap = '6px';
+
+            // Message history area inside the chatbox
+            const chatMsgs = document.createElement('div');
+            chatMsgs.className = 'history-chatbox-msgs';
+            chatMsgs.style.maxHeight = '180px';
+            chatMsgs.style.overflowY = 'auto';
+            chatMsgs.style.display = 'flex';
+            chatMsgs.style.flexDirection = 'column';
+            chatMsgs.style.gap = '4px';
+            chatMsgs.style.marginBottom = '6px';
+            chatMsgs.style.scrollbarWidth = 'thin';
+            chatMsgs.style.scrollbarColor = 'rgba(59,130,246,0.15) transparent';
+            chatBox.appendChild(chatMsgs);
+
+            // Input row
+            const chatRow = document.createElement('div');
+            chatRow.style.display = 'flex';
+            chatRow.style.gap = '6px';
             const chatBoxInput = document.createElement('input');
             chatBoxInput.type = 'text';
-            chatBoxInput.placeholder = 'Send a message...';
+            chatBoxInput.placeholder = 'Type a message...';
             chatBoxInput.style.padding = '8px 10px';
             chatBoxInput.style.borderRadius = '8px';
             chatBoxInput.style.border = '1px solid rgba(3,102,214,0.06)';
-            chatBoxInput.style.width = '100%';
             chatBoxInput.style.flex = '1';
             chatBoxInput.style.minWidth = '0';
+            chatBoxInput.style.fontSize = '13px';
             const chatBoxSend = document.createElement('button');
             chatBoxSend.className = 'btn-text';
             chatBoxSend.textContent = 'Send';
             chatBoxSend.style.padding = '8px 10px';
-            chatBoxSend.style.marginLeft = '6px';
-            chatBox.appendChild(chatBoxInput);
-            chatBox.appendChild(chatBoxSend);
+            chatRow.appendChild(chatBoxInput);
+            chatRow.appendChild(chatBoxSend);
+            chatBox.appendChild(chatRow);
 
-            // Text button click - toggle chat box
-            textBtn.addEventListener('click', () => {
+            // Store partnerUid on the chatbox for the receive handler
+            chatBox.dataset.partnerUid = partnerUid;
+
+            // Text button click - toggle chat box and load messages
+            textBtn.addEventListener('click', async () => {
                 if (chatBox.style.display === 'none' || !chatBox.style.display) {
                     chatBox.style.display = 'flex';
                     textBtn.style.display = 'none';
                     chatBoxInput.focus();
+                    // Load existing messages from Firestore
+                    try {
+                        if (chatMsgs.children.length === 0 && conversationId) {
+                            chatMsgs.innerHTML = '<div style="text-align:center;color:#94a8c0;font-size:11px;padding:4px;">Loading...</div>';
+                            const { getDocs: gd, collection: col, query: qu, orderBy: ob } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                            const msgsSnap = await gd(qu(col(window._firebaseDb, 'conversations', conversationId, 'messages'), ob('createdAt', 'asc')));
+                            chatMsgs.innerHTML = '';
+                            msgsSnap.forEach(msgDoc => {
+                                const md = msgDoc.data();
+                                const isMe = md.senderId === uid;
+                                const row = document.createElement('div');
+                                row.className = 'msg-row ' + (isMe ? 'msg-row-out' : 'msg-row-in');
+                                const bubble = document.createElement('div');
+                                bubble.className = 'message-bubble ' + (isMe ? 'message-out' : 'message-in');
+                                bubble.style.fontSize = '12px';
+                                bubble.style.padding = '6px 10px';
+                                bubble.textContent = md.text || '';
+                                row.appendChild(bubble);
+                                chatMsgs.appendChild(row);
+                            });
+                            requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+                        }
+                    } catch (e) { console.warn('Load chat history failed', e); chatMsgs.innerHTML = ''; }
                 } else {
                     chatBox.style.display = 'none';
                     textBtn.style.display = '';
                 }
             });
 
-            // Send button click - emit private message
+            // Enter key sends message
+            chatBoxInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); chatBoxSend.click(); }
+            });
+
+            // Send button click - emit private message, keep chatbox open
             chatBoxSend.addEventListener('click', async () => {
                 const txt = (chatBoxInput.value || '').trim();
                 if (!txt) return;
 
                 try {
-                    // Emit to server with recipient UID
+                    // Optimistic: show sent message bubble immediately
+                    const row = document.createElement('div');
+                    row.className = 'msg-row msg-row-out';
+                    const bubble = document.createElement('div');
+                    bubble.className = 'message-bubble message-out msg-sending';
+                    bubble.style.fontSize = '12px';
+                    bubble.style.padding = '6px 10px';
+                    bubble.textContent = txt;
+                    row.appendChild(bubble);
+                    chatMsgs.appendChild(row);
+                    requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+
+                    // Save to localStorage so it appears in Messages tab
+                    addMessageEntry({ id: partnerUid, when: Date.now(), text: txt, direction: 'out' });
+
+                    // Clear input (keep chatbox open!)
+                    chatBoxInput.value = '';
+                    chatBoxInput.focus();
+
+                    // Emit to server
                     if (socket) {
                         socket.emit('private-message', {
                             recipientUid: partnerUid,
                             text: txt
                         });
-
-                        // Clear input and close chat box
-                        chatBoxInput.value = '';
-                        chatBox.style.display = 'none';
-                        textBtn.style.display = '';
-
-                        // Show inline ack
-                        const ack = document.createElement('div');
-                        ack.style.fontSize = '12px';
-                        ack.style.color = '#0b4f8a';
-                        ack.textContent = 'Sending...';
-                        actions.appendChild(ack);
-                        setTimeout(() => { try { actions.removeChild(ack); } catch (e) { } }, 2500);
                     }
+
+                    // Remove sending state after confirmation
+                    setTimeout(() => {
+                        try { bubble.classList.remove('msg-sending'); } catch (_) { }
+                    }, 1500);
                 } catch (e) {
                     console.error('Send message failed', e);
                 }
@@ -2010,8 +2248,8 @@ window._suppressMembershipPopup = window._suppressMembershipPopup || false;
         });
     }
 })();
-    </script >
 
-    document.addEventListener('DOMContentLoaded', () => {
-        try { startLocalStream(); } catch (e) { console.warn('startLocalStream failed on load', e); }
-    }, { passive: true });
+
+document.addEventListener('DOMContentLoaded', () => {
+    try { startLocalStream(); } catch (e) { console.warn('startLocalStream failed on load', e); }
+}, { passive: true });
