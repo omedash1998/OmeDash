@@ -167,7 +167,7 @@ module.exports = function (io) {
 
         socket.on("ready", async () => {
             // Wait for any in-flight set-preferences write to finish first
-            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) {} }
+            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
             matchmaking.joinQueue(socket.id);
         });
 
@@ -194,7 +194,7 @@ module.exports = function (io) {
         socket.on("resume", async () => {
             console.log("User resumed", socket.id);
             // Wait for any in-flight set-preferences write to finish first
-            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) {} }
+            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
             if (state.paused.has(socket.id)) state.paused.delete(socket.id);
             matchmaking.joinQueue(socket.id);
         });
@@ -435,18 +435,50 @@ module.exports = function (io) {
                     return participants.includes(senderUid) && participants.includes(recipientUid);
                 });
 
+                let conversationDoc;
                 if (matchingConvs.length === 0) {
-                    socket.emit('message-error', { message: 'No conversation found. Connect first.' });
-                    return;
+                    // Auto-create conversation between these two users
+                    console.log('No conversation found, creating one:', senderUid, '↔', recipientUid);
+                    const participantProfiles = {};
+                    try {
+                        const sDoc = await fireDb.collection('users').doc(senderUid).get();
+                        if (sDoc.exists) {
+                            const sd = sDoc.data();
+                            participantProfiles[senderUid] = { displayName: sd.displayName || 'User', photoURL: sd.photoURL || null };
+                        } else {
+                            participantProfiles[senderUid] = { displayName: 'User', photoURL: null };
+                        }
+                        const rDoc = await fireDb.collection('users').doc(recipientUid).get();
+                        if (rDoc.exists) {
+                            const rd = rDoc.data();
+                            participantProfiles[recipientUid] = { displayName: rd.displayName || 'User', photoURL: rd.photoURL || null };
+                        } else {
+                            participantProfiles[recipientUid] = { displayName: 'User', photoURL: null };
+                        }
+                    } catch (e) {
+                        console.warn('Failed to fetch profiles for new conversation:', e);
+                        participantProfiles[senderUid] = participantProfiles[senderUid] || { displayName: 'User', photoURL: null };
+                        participantProfiles[recipientUid] = participantProfiles[recipientUid] || { displayName: 'User', photoURL: null };
+                    }
+                    const newConvRef = await fireDb.collection('conversations').add({
+                        participants: [senderUid, recipientUid],
+                        participantProfiles: participantProfiles,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+                        lastMessageText: ''
+                    });
+                    conversationDoc = await newConvRef.get();
+                    console.log('✓ New conversation created:', newConvRef.id);
+                } else {
+                    // Pick the most recently active conversation between these two users
+                    matchingConvs.sort((a, b) => {
+                        const aTime = a.data().lastMessageAt ? a.data().lastMessageAt.toMillis() : 0;
+                        const bTime = b.data().lastMessageAt ? b.data().lastMessageAt.toMillis() : 0;
+                        return bTime - aTime;
+                    });
+                    conversationDoc = matchingConvs[0];
                 }
 
-                // Pick the most recently active conversation between these two users
-                matchingConvs.sort((a, b) => {
-                    const aTime = a.data().lastMessageAt ? a.data().lastMessageAt.toMillis() : 0;
-                    const bTime = b.data().lastMessageAt ? b.data().lastMessageAt.toMillis() : 0;
-                    return bTime - aTime;
-                });
-                const conversationDoc = matchingConvs[0];
                 const conversationId = conversationDoc.id;
 
                 const senderDoc = await fireDb.collection('users').doc(senderUid).get();
@@ -628,7 +660,7 @@ module.exports = function (io) {
 
         socket.on("next", async () => {
             // Wait for any in-flight set-preferences write to finish first
-            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) {} }
+            if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
             const partnerId = state.pairs[socket.id];
             if (partnerId) {
                 await endFirestoreRoom(socket.id);

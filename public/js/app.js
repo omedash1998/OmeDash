@@ -625,64 +625,142 @@ function attachSocketHandlers() {
     socket.on('private-message-received', (payload) => {
         try {
             const { fromUid, text, conversationId } = payload;
-            console.log('Received private message from', fromUid);
+            console.log('Received private message from', fromUid, 'conv:', conversationId);
             showToast('New message received');
 
             // Suppress Firestore listener re-render for this incoming message
             _msgSendCooldown = Date.now() + 4000;
 
-            // 1) Inject into Messages tab conv-box if it exists (always try, even if tab not active)
+            // Helper: inject bubble into a conv-box body
+            function injectIntoBox(partnerBox) {
+                const body = partnerBox.querySelector('.conv-body');
+                if (!body) return false;
+                const row = document.createElement('div');
+                row.className = 'msg-row msg-row-in';
+                const bubble = document.createElement('div');
+                bubble.className = 'message-bubble message-in';
+                bubble.textContent = text;
+                row.appendChild(bubble);
+                body.appendChild(row);
+                if (body.classList.contains('open')) {
+                    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+                } else {
+                    partnerBox.classList.add('conv-unread-pulse');
+                    setTimeout(() => { partnerBox.classList.remove('conv-unread-pulse'); }, 2000);
+                }
+                // Update subtitle
+                const sub = partnerBox.querySelector('.conv-sub');
+                if (sub) sub.textContent = new Date().toLocaleString() + ' \u2014 ' + (text.length > 40 ? text.slice(0, 40) + '...' : text);
+                return true;
+            }
+
+            // Try to inject into existing Messages tab conv-box
             const ml = document.getElementById('messageList');
+            let injected = false;
             if (ml) {
                 const partnerBox = ml.querySelector('.conv-box[data-partner-uid="' + fromUid + '"]');
                 if (partnerBox) {
-                    const body = partnerBox.querySelector('.conv-body');
-                    if (body) {
-                        const row = document.createElement('div');
-                        row.className = 'msg-row msg-row-in';
-                        const bubble = document.createElement('div');
-                        bubble.className = 'message-bubble message-in';
-                        bubble.textContent = text;
-                        row.appendChild(bubble);
-                        body.appendChild(row);
-                        if (body.classList.contains('open')) {
-                            requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
-                        } else {
-                            partnerBox.classList.add('conv-unread-pulse');
-                            setTimeout(() => { partnerBox.classList.remove('conv-unread-pulse'); }, 2000);
-                        }
-                        // Update subtitle
-                        const sub = partnerBox.querySelector('.conv-sub');
-                        if (sub) sub.textContent = new Date().toLocaleString() + ' \u2014 ' + (text.length > 40 ? text.slice(0, 40) + '...' : text);
-                        // Move to top
-                        if (ml.firstChild !== partnerBox) ml.insertBefore(partnerBox, ml.firstChild);
-                    }
-                } else {
-                    renderMessagesList(true); // new partner, need full render
+                    injected = injectIntoBox(partnerBox);
+                    // Move to top
+                    if (injected && ml.firstChild !== partnerBox) ml.insertBefore(partnerBox, ml.firstChild);
                 }
             }
 
-            // 2) Also inject into any open Connections tab chatbox for this partner
-            try {
-                const openChatBoxes = document.querySelectorAll('.history-chatbox[data-partner-uid="' + fromUid + '"]');
-                openChatBoxes.forEach(chatBox => {
-                    if (chatBox.style.display === 'flex') {
-                        const msgsArea = chatBox.querySelector('.history-chatbox-msgs');
-                        if (msgsArea) {
-                            const row = document.createElement('div');
-                            row.className = 'msg-row msg-row-in';
-                            const bubble = document.createElement('div');
-                            bubble.className = 'message-bubble message-in';
-                            bubble.style.fontSize = '12px';
-                            bubble.style.padding = '6px 10px';
-                            bubble.textContent = text;
-                            row.appendChild(bubble);
-                            msgsArea.appendChild(row);
-                            requestAnimationFrame(() => { msgsArea.scrollTop = msgsArea.scrollHeight; });
-                        }
-                    }
+            // If not injected (box doesn't exist yet), create one directly from socket data
+            if (!injected && ml) {
+                // Remove empty state if showing
+                const emptyEl = ml.querySelector('.history-empty');
+                if (emptyEl) emptyEl.remove();
+                const loadingEl = ml.querySelector('div[style*="text-align:center"]');
+                if (loadingEl && !loadingEl.classList.contains('conv-box')) loadingEl.remove();
+
+                // Build a minimal conv-box from the socket payload
+                const box = document.createElement('div');
+                box.className = 'conv-box conv-box-enter';
+                box.setAttribute('data-partner-uid', fromUid);
+
+                const header = document.createElement('div'); header.className = 'conv-header';
+                const avatar = document.createElement('div'); avatar.className = 'conv-avatar';
+                avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>';
+                const titleWrap = document.createElement('div');
+                titleWrap.style.flex = '1'; titleWrap.style.minWidth = '0';
+                const title = document.createElement('div'); title.className = 'conv-title';
+                title.textContent = fromUid.slice(0, 8) + '...';
+                const sub = document.createElement('div'); sub.className = 'conv-sub';
+                sub.textContent = new Date().toLocaleString() + ' \u2014 ' + (text.length > 40 ? text.slice(0, 40) + '...' : text);
+                titleWrap.appendChild(title); titleWrap.appendChild(sub);
+                header.appendChild(avatar); header.appendChild(titleWrap);
+
+                const body = document.createElement('div'); body.className = 'conv-body';
+                const row = document.createElement('div'); row.className = 'msg-row msg-row-in';
+                const bubble = document.createElement('div'); bubble.className = 'message-bubble message-in';
+                bubble.textContent = text;
+                row.appendChild(bubble); body.appendChild(row);
+
+                const footer = document.createElement('div'); footer.className = 'conv-footer';
+                footer.style.display = 'none';
+                const input = document.createElement('input'); input.className = 'conv-input'; input.placeholder = 'Type a message...';
+                const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
+                footer.appendChild(input); footer.appendChild(send);
+
+                header.addEventListener('click', () => {
+                    const isOpen = body.classList.toggle('open');
+                    footer.style.display = isOpen ? '' : 'none';
+                    if (isOpen) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
                 });
-            } catch (e) { /* ignore */ }
+
+                // Send handler for this new box
+                if (conversationId) {
+                    const doSend = async () => {
+                        const txt = (input.value || '').trim();
+                        if (!txt) return;
+                        try {
+                            _msgSendCooldown = Date.now() + 4000;
+                            const r = document.createElement('div'); r.className = 'msg-row msg-row-out';
+                            const b = document.createElement('div'); b.className = 'message-bubble message-out msg-sending'; b.textContent = txt;
+                            r.appendChild(b); body.appendChild(r);
+                            requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+                            const s2 = box.querySelector('.conv-sub');
+                            if (s2) s2.textContent = new Date().toLocaleString() + ' \u2014 You: ' + (txt.length > 40 ? txt.slice(0, 40) + '...' : txt);
+                            input.value = ''; input.focus();
+                            if (socket && socket.connected) {
+                                socket.emit('private-message', { recipientUid: fromUid, text: txt });
+                            }
+                            setTimeout(() => { try { b.classList.remove('msg-sending'); } catch (_) {} }, 1500);
+                        } catch (e) { console.warn('Send failed', e); }
+                    };
+                    send.addEventListener('click', doSend);
+                    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSend(); } });
+                }
+
+                box.appendChild(header); box.appendChild(body); box.appendChild(footer);
+                ml.insertBefore(box, ml.firstChild);
+                _renderedPartnerBoxes.set(fromUid, box);
+                requestAnimationFrame(() => { box.classList.remove('conv-box-enter'); });
+
+                // Also try to fetch the real profile name/photo in background
+                try {
+                    const auth = window._firebaseAuth;
+                    if (auth && auth.currentUser) {
+                        auth.currentUser.getIdToken().then(token => {
+                            fetch('/api/user-profile/' + fromUid, { headers: { Authorization: 'Bearer ' + token } })
+                                .then(r => r.ok ? r.json() : null)
+                                .then(p => {
+                                    if (p) {
+                                        if (p.displayName) title.textContent = p.displayName;
+                                        if (p.photoURL) {
+                                            avatar.innerHTML = '';
+                                            const im = document.createElement('img');
+                                            im.src = p.photoURL; im.referrerPolicy = 'no-referrer'; im.crossOrigin = 'anonymous';
+                                            im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover';
+                                            avatar.appendChild(im);
+                                        }
+                                    }
+                                }).catch(() => {});
+                        }).catch(() => {});
+                    }
+                } catch (_) {}
+            }
         } catch (e) { console.error('private-message-received handler failed', e); }
     });
 
@@ -1345,36 +1423,16 @@ async function renderHistoryList() {
             textBtn.className = 'btn-text';
             textBtn.textContent = 'Text';
 
-            // Create inline chat box (hidden by default)
+            // Create inline chat box (hidden by default) — simple input only
             const chatBox = document.createElement('div');
-            chatBox.className = 'history-chatbox';
             chatBox.style.display = 'none';
             chatBox.style.marginTop = '8px';
             chatBox.style.width = '100%';
-            chatBox.style.flexDirection = 'column';
-            chatBox.style.gap = '6px';
             chatBox.dataset.partnerUid = partnerUid;
 
-            // Message history area
-            const chatMsgs = document.createElement('div');
-            chatMsgs.className = 'history-chatbox-msgs';
-            chatMsgs.style.maxHeight = '180px';
-            chatMsgs.style.overflowY = 'auto';
-            chatMsgs.style.display = 'flex';
-            chatMsgs.style.flexDirection = 'column';
-            chatMsgs.style.gap = '4px';
-            chatMsgs.style.marginBottom = '6px';
-            chatMsgs.style.scrollbarWidth = 'thin';
-            chatMsgs.style.scrollbarColor = 'rgba(59,130,246,0.15) transparent';
-            chatBox.appendChild(chatMsgs);
-
-            // Input row
-            const chatRow = document.createElement('div');
-            chatRow.style.display = 'flex';
-            chatRow.style.gap = '6px';
             const chatBoxInput = document.createElement('input');
             chatBoxInput.type = 'text';
-            chatBoxInput.placeholder = 'Type a message...';
+            chatBoxInput.placeholder = 'Send a message...';
             chatBoxInput.style.padding = '8px 10px';
             chatBoxInput.style.borderRadius = '8px';
             chatBoxInput.style.border = '1px solid rgba(3,102,214,0.06)';
@@ -1385,39 +1443,16 @@ async function renderHistoryList() {
             chatBoxSend.className = 'btn-text';
             chatBoxSend.textContent = 'Send';
             chatBoxSend.style.padding = '8px 10px';
-            chatRow.appendChild(chatBoxInput);
-            chatRow.appendChild(chatBoxSend);
-            chatBox.appendChild(chatRow);
+            chatBoxSend.style.marginLeft = '6px';
+            chatBox.appendChild(chatBoxInput);
+            chatBox.appendChild(chatBoxSend);
 
-            // Text button click - toggle chat box and load messages
-            textBtn.addEventListener('click', async () => {
+            // Text button click - toggle chat box
+            textBtn.addEventListener('click', () => {
                 if (chatBox.style.display === 'none' || !chatBox.style.display) {
                     chatBox.style.display = 'flex';
                     textBtn.style.display = 'none';
                     chatBoxInput.focus();
-                    // Load message history from Firestore
-                    try {
-                        if (chatMsgs.children.length === 0 && conversationId) {
-                            chatMsgs.innerHTML = '<div style="text-align:center;color:#94a8c0;font-size:11px;padding:4px;">Loading...</div>';
-                            const { getDocs: gd, collection: col, query: qu, orderBy: ob } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
-                            const msgsSnap = await gd(qu(col(window._firebaseDb, 'conversations', conversationId, 'messages'), ob('createdAt', 'asc')));
-                            chatMsgs.innerHTML = '';
-                            msgsSnap.forEach(msgDoc => {
-                                const md = msgDoc.data();
-                                const isMe = md.senderId === uid;
-                                const row = document.createElement('div');
-                                row.className = 'msg-row ' + (isMe ? 'msg-row-out' : 'msg-row-in');
-                                const bubble = document.createElement('div');
-                                bubble.className = 'message-bubble ' + (isMe ? 'message-out' : 'message-in');
-                                bubble.style.fontSize = '12px';
-                                bubble.style.padding = '6px 10px';
-                                bubble.textContent = md.text || '';
-                                row.appendChild(bubble);
-                                chatMsgs.appendChild(row);
-                            });
-                            requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
-                        }
-                    } catch (e) { console.warn('Load chat history failed', e); chatMsgs.innerHTML = ''; }
                 } else {
                     chatBox.style.display = 'none';
                     textBtn.style.display = '';
@@ -1429,29 +1464,14 @@ async function renderHistoryList() {
                 if (e.key === 'Enter') { e.preventDefault(); chatBoxSend.click(); }
             });
 
-            // Send button click — keep chatbox open, show inline bubble
+            // Send button click — send message, close chatbox, show ack
             ((cPartnerUid, cConvId) => {
                 chatBoxSend.addEventListener('click', async () => {
                     const txt = (chatBoxInput.value || '').trim();
                     if (!txt) return;
 
                     try {
-                        // Optimistic: show sent bubble immediately
                         _msgSendCooldown = Date.now() + 4000;
-                        const row = document.createElement('div');
-                        row.className = 'msg-row msg-row-out';
-                        const bubble = document.createElement('div');
-                        bubble.className = 'message-bubble message-out msg-sending';
-                        bubble.style.fontSize = '12px';
-                        bubble.style.padding = '6px 10px';
-                        bubble.textContent = txt;
-                        row.appendChild(bubble);
-                        chatMsgs.appendChild(row);
-                        requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
-
-                        // Clear input (keep chatbox open!)
-                        chatBoxInput.value = '';
-                        chatBoxInput.focus();
 
                         if (socket && socket.connected) {
                             socket.emit('private-message', {
@@ -1470,19 +1490,24 @@ async function renderHistoryList() {
                             });
                         }
 
-                        setTimeout(() => {
-                            try { bubble.classList.remove('msg-sending'); } catch (_) {}
-                        }, 1500);
+                        // Clear input and close chatbox
+                        chatBoxInput.value = '';
+                        chatBox.style.display = 'none';
+                        textBtn.style.display = '';
+
+                        // Show brief sent ack
+                        const ack = document.createElement('div');
+                        ack.style.fontSize = '12px';
+                        ack.style.color = '#0b4f8a';
+                        ack.textContent = '\u2714 Sent';
+                        actions.appendChild(ack);
+                        setTimeout(() => { try { actions.removeChild(ack); } catch (_) {} }, 2000);
                     } catch (e) {
                         console.error('Send message failed', e);
+                        showToast('Send failed');
                     }
                 });
             })(partnerUid, conversationId);
-
-            // Also allow Enter key to send
-            chatBoxInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') { e.preventDefault(); chatBoxSend.click(); }
-            });
 
             actions.appendChild(textBtn);
 

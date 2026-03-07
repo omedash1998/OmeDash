@@ -602,33 +602,135 @@ function attachSocketHandlers() {
     socket.on('private-message-received', (payload) => {
         try {
             const { fromUid, text, conversationId } = payload;
-            console.log('Received private message from', fromUid);
+            console.log('[main.js] Received private message from', fromUid);
             showToast('New message received');
 
-            // Inline append to Messages tab conversation (or create new one)
+            // Inline append to Messages tab conversation (localStorage-based)
             appendIncomingMessage(fromUid, text);
 
-            // Also inject into any open Connections tab chatbox for this partner
+            // ALSO inject into Firestore-based conv-boxes (rendered by app.js)
             try {
-                const openChatBoxes = document.querySelectorAll('.history-chatbox[data-partner-uid="' + fromUid + '"]');
-                openChatBoxes.forEach(chatBox => {
-                    if (chatBox.style.display === 'flex') {
-                        const msgsArea = chatBox.querySelector('.history-chatbox-msgs');
-                        if (msgsArea) {
-                            const row = document.createElement('div');
-                            row.className = 'msg-row msg-row-in';
-                            const bubble = document.createElement('div');
-                            bubble.className = 'message-bubble message-in';
-                            bubble.style.fontSize = '12px';
-                            bubble.style.padding = '6px 10px';
-                            bubble.textContent = text;
-                            row.appendChild(bubble);
-                            msgsArea.appendChild(row);
-                            requestAnimationFrame(() => { msgsArea.scrollTop = msgsArea.scrollHeight; });
+                if (typeof _msgSendCooldown !== 'undefined') _msgSendCooldown = Date.now() + 4000;
+                const ml = document.getElementById('messageList');
+                if (ml) {
+                    const partnerBox = ml.querySelector('.conv-box[data-partner-uid="' + fromUid + '"]');
+                    if (partnerBox) {
+                        const body = partnerBox.querySelector('.conv-body');
+                        if (body) {
+                            // Check if this message was already injected (avoid duplication)
+                            const lastBubble = body.querySelector('.msg-row:last-child .message-bubble');
+                            if (!lastBubble || lastBubble.textContent !== text) {
+                                const row = document.createElement('div');
+                                row.className = 'msg-row msg-row-in';
+                                const bubble = document.createElement('div');
+                                bubble.className = 'message-bubble message-in';
+                                bubble.textContent = text;
+                                row.appendChild(bubble);
+                                body.appendChild(row);
+                                if (body.classList.contains('open')) {
+                                    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+                                } else {
+                                    partnerBox.classList.add('conv-unread-pulse');
+                                    setTimeout(() => { partnerBox.classList.remove('conv-unread-pulse'); }, 2000);
+                                }
+                                // Update subtitle
+                                const sub = partnerBox.querySelector('.conv-sub');
+                                if (sub) sub.textContent = new Date().toLocaleString() + ' \u2014 ' + (text.length > 40 ? text.slice(0, 40) + '...' : text);
+                                // Move to top
+                                if (ml.firstChild !== partnerBox) ml.insertBefore(partnerBox, ml.firstChild);
+                            }
                         }
+                    } else {
+                        // No conv-box exists — create one directly
+                        const emptyEl = ml.querySelector('.history-empty');
+                        if (emptyEl) emptyEl.remove();
+                        const loadingEl = ml.querySelector('div[style*="text-align:center"]');
+                        if (loadingEl && !loadingEl.classList.contains('conv-box')) loadingEl.remove();
+
+                        const box = document.createElement('div');
+                        box.className = 'conv-box conv-box-enter';
+                        box.setAttribute('data-partner-uid', fromUid);
+
+                        const header = document.createElement('div'); header.className = 'conv-header';
+                        const avatar = document.createElement('div'); avatar.className = 'conv-avatar';
+                        avatar.innerHTML = '<svg width="32" height="22" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="4" fill="#eef7ff"/><path d="M12 12c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3z" fill="#cfeeff"/></svg>';
+                        const titleWrap = document.createElement('div');
+                        titleWrap.style.flex = '1'; titleWrap.style.minWidth = '0';
+                        const titleEl = document.createElement('div'); titleEl.className = 'conv-title';
+                        titleEl.textContent = fromUid.slice(0, 8) + '...';
+                        const subEl = document.createElement('div'); subEl.className = 'conv-sub';
+                        subEl.textContent = new Date().toLocaleString() + ' \u2014 ' + (text.length > 40 ? text.slice(0, 40) + '...' : text);
+                        titleWrap.appendChild(titleEl); titleWrap.appendChild(subEl);
+                        header.appendChild(avatar); header.appendChild(titleWrap);
+
+                        const bodyEl = document.createElement('div'); bodyEl.className = 'conv-body';
+                        const row = document.createElement('div'); row.className = 'msg-row msg-row-in';
+                        const bubble = document.createElement('div'); bubble.className = 'message-bubble message-in';
+                        bubble.textContent = text;
+                        row.appendChild(bubble); bodyEl.appendChild(row);
+
+                        const footer = document.createElement('div'); footer.className = 'conv-footer';
+                        footer.style.display = 'none';
+                        const inputEl = document.createElement('input'); inputEl.className = 'conv-input'; inputEl.placeholder = 'Type a message...';
+                        const sendEl = document.createElement('button'); sendEl.className = 'conv-send'; sendEl.textContent = 'Send';
+                        footer.appendChild(inputEl); footer.appendChild(sendEl);
+
+                        header.addEventListener('click', () => {
+                            const isOpen = bodyEl.classList.toggle('open');
+                            footer.style.display = isOpen ? '' : 'none';
+                            if (isOpen) requestAnimationFrame(() => { bodyEl.scrollTop = bodyEl.scrollHeight; });
+                        });
+
+                        // Send handler
+                        const doSend = async () => {
+                            const txt = (inputEl.value || '').trim();
+                            if (!txt) return;
+                            try {
+                                if (typeof _msgSendCooldown !== 'undefined') _msgSendCooldown = Date.now() + 4000;
+                                const r = document.createElement('div'); r.className = 'msg-row msg-row-out';
+                                const b = document.createElement('div'); b.className = 'message-bubble message-out msg-sending'; b.textContent = txt;
+                                r.appendChild(b); bodyEl.appendChild(r);
+                                requestAnimationFrame(() => { bodyEl.scrollTop = bodyEl.scrollHeight; });
+                                inputEl.value = ''; inputEl.focus();
+                                if (socket && socket.connected) {
+                                    socket.emit('private-message', { recipientUid: fromUid, text: txt });
+                                }
+                                setTimeout(() => { try { b.classList.remove('msg-sending'); } catch (_) {} }, 1500);
+                            } catch (e) { console.warn('Send failed', e); }
+                        };
+                        sendEl.addEventListener('click', doSend);
+                        inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSend(); } });
+
+                        box.appendChild(header); box.appendChild(bodyEl); box.appendChild(footer);
+                        ml.insertBefore(box, ml.firstChild);
+                        if (typeof _renderedPartnerBoxes !== 'undefined') _renderedPartnerBoxes.set(fromUid, box);
+                        requestAnimationFrame(() => { box.classList.remove('conv-box-enter'); });
+
+                        // Fetch real profile in background
+                        try {
+                            const auth = window._firebaseAuth;
+                            if (auth && auth.currentUser) {
+                                auth.currentUser.getIdToken().then(token => {
+                                    fetch('/api/user-profile/' + fromUid, { headers: { Authorization: 'Bearer ' + token } })
+                                        .then(r => r.ok ? r.json() : null)
+                                        .then(p => {
+                                            if (p) {
+                                                if (p.displayName) titleEl.textContent = p.displayName;
+                                                if (p.photoURL) {
+                                                    avatar.innerHTML = '';
+                                                    const im = document.createElement('img');
+                                                    im.src = p.photoURL; im.referrerPolicy = 'no-referrer'; im.crossOrigin = 'anonymous';
+                                                    im.style.width = '100%'; im.style.height = '100%'; im.style.objectFit = 'cover';
+                                                    avatar.appendChild(im);
+                                                }
+                                            }
+                                        }).catch(() => {});
+                                }).catch(() => {});
+                            }
+                        } catch (_) {}
                     }
-                });
-            } catch (e) { /* ignore */ }
+                }
+            } catch (e) { console.warn('[main.js] conv-box inject failed', e); }
         } catch (e) { console.error('private-message-received handler failed', e); }
     });
 
