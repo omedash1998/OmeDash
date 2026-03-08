@@ -625,15 +625,13 @@ function attachSocketHandlers() {
     socket.on('private-message-received', (payload) => {
         try {
             const { fromUid, text, conversationId } = payload;
-            console.log('Received private message from', fromUid, 'conv:', conversationId);
+            console.log('[app.js] Received private message from', fromUid, 'conv:', conversationId);
             showToast('New message received');
-
-            // Suppress Firestore listener re-render for this incoming message
-            _msgSendCooldown = Date.now() + 4000;
 
             // Helper: inject bubble into a conv-box body
             function injectIntoBox(partnerBox) {
                 const body = partnerBox.querySelector('.conv-body');
+                console.log('[DEBUG injectIntoBox] body found:', !!body, 'body children before:', body ? body.children.length : 0, 'body.open:', body ? body.classList.contains('open') : 'N/A');
                 if (!body) return false;
                 const row = document.createElement('div');
                 row.className = 'msg-row msg-row-in';
@@ -642,6 +640,7 @@ function attachSocketHandlers() {
                 bubble.textContent = text;
                 row.appendChild(bubble);
                 body.appendChild(row);
+                console.log('[DEBUG injectIntoBox] bubble appended! body children after:', body.children.length, 'row in DOM:', document.contains(row));
                 if (body.classList.contains('open')) {
                     requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
                 } else {
@@ -658,8 +657,12 @@ function attachSocketHandlers() {
             const ml = document.getElementById('messageList');
             let injected = false;
             if (ml) {
-                const partnerBox = ml.querySelector('.conv-box[data-partner-uid="' + fromUid + '"]');
+                // Check both attribute names: app.js uses data-partner-uid, main.js uses data-partner-id
+                let partnerBox = ml.querySelector('.conv-box[data-partner-uid="' + fromUid + '"]');
+                if (!partnerBox) partnerBox = ml.querySelector('.conv-box[data-partner-id="' + fromUid + '"]');
                 if (partnerBox) {
+                    // Ensure both attributes are set for future lookups
+                    if (!partnerBox.getAttribute('data-partner-uid')) partnerBox.setAttribute('data-partner-uid', fromUid);
                     injected = injectIntoBox(partnerBox);
                     // Move to top
                     if (injected && ml.firstChild !== partnerBox) ml.insertBefore(partnerBox, ml.firstChild);
@@ -703,10 +706,40 @@ function attachSocketHandlers() {
                 const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
                 footer.appendChild(input); footer.appendChild(send);
 
-                header.addEventListener('click', () => {
+                header.addEventListener('click', async () => {
                     const isOpen = body.classList.toggle('open');
                     footer.style.display = isOpen ? '' : 'none';
-                    if (isOpen) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+                    if (isOpen) {
+                        // Lazy-load all messages from Firestore on first open
+                        if (!body.dataset.loaded && conversationId) {
+                            try {
+                                const db = window._firebaseDb;
+                                const user = window._firebaseAuth && window._firebaseAuth.currentUser;
+                                if (db && user) {
+                                    const msgsRef = collection(db, 'conversations', conversationId, 'messages');
+                                    const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
+                                    const snap = await getDocs(msgsQuery);
+                                    if (!snap.empty) {
+                                        body.innerHTML = '';
+                                        snap.forEach(md => {
+                                            const mData = md.data();
+                                            const senderUid = mData.senderId || mData.sender || mData.fromUid;
+                                            const dir = senderUid === user.uid ? 'out' : 'in';
+                                            const row = document.createElement('div');
+                                            row.className = 'msg-row ' + (dir === 'out' ? 'msg-row-out' : 'msg-row-in');
+                                            const bubble = document.createElement('div');
+                                            bubble.className = 'message-bubble ' + (dir === 'out' ? 'message-out' : 'message-in');
+                                            bubble.textContent = mData.text || '';
+                                            row.appendChild(bubble);
+                                            body.appendChild(row);
+                                        });
+                                        body.dataset.loaded = 'true';
+                                    }
+                                }
+                            } catch (e) { console.warn('Lazy load messages failed', e); }
+                        }
+                        requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+                    }
                 });
 
                 // Send handler for this new box
@@ -726,7 +759,7 @@ function attachSocketHandlers() {
                             if (socket && socket.connected) {
                                 socket.emit('private-message', { recipientUid: fromUid, text: txt });
                             }
-                            setTimeout(() => { try { b.classList.remove('msg-sending'); } catch (_) {} }, 1500);
+                            setTimeout(() => { try { b.classList.remove('msg-sending'); } catch (_) { } }, 1500);
                         } catch (e) { console.warn('Send failed', e); }
                     };
                     send.addEventListener('click', doSend);
@@ -756,10 +789,10 @@ function attachSocketHandlers() {
                                             avatar.appendChild(im);
                                         }
                                     }
-                                }).catch(() => {});
-                        }).catch(() => {});
+                                }).catch(() => { });
+                        }).catch(() => { });
                     }
-                } catch (_) {}
+                } catch (_) { }
             }
         } catch (e) { console.error('private-message-received handler failed', e); }
     });
@@ -1047,13 +1080,37 @@ async function renderMessagesList(force) {
             hasMessages = true;
 
             // Check if a box for this partner already exists in the DOM
-            const existingBox = list.querySelector('.conv-box[data-partner-uid="' + partnerUid + '"]');
+            const existingBox = list.querySelector('.conv-box[data-partner-uid="' + partnerUid + '"]')
+                || list.querySelector('.conv-box[data-partner-id="' + partnerUid + '"]');
             if (existingBox) {
-                // Update only the subtitle \u2014 preserve everything else (open state, scroll, messages)
+                // Ensure data-partner-uid is set for future lookups
+                if (!existingBox.getAttribute('data-partner-uid')) existingBox.setAttribute('data-partner-uid', partnerUid);
+                // Update subtitle
                 const existSub = existingBox.querySelector('.conv-sub');
                 const last = finalMsgs[finalMsgs.length - 1];
                 if (existSub && last) {
                     existSub.textContent = new Date(last.when).toLocaleString() + ' \u2014 ' + (last.direction === 'out' ? 'You: ' : '') + (last.text.length > 40 ? last.text.slice(0, 40) + '...' : last.text);
+                }
+                // Also update the body with any new messages
+                const existBody = existingBox.querySelector('.conv-body');
+                if (existBody) {
+                    const currentBubbleCount = existBody.querySelectorAll('.msg-row').length;
+                    if (finalMsgs.length > currentBubbleCount) {
+                        // Append only the NEW messages (ones not yet in the DOM)
+                        const newMsgs = finalMsgs.slice(currentBubbleCount);
+                        newMsgs.forEach(m => {
+                            const row = document.createElement('div');
+                            row.className = 'msg-row ' + (m.direction === 'out' ? 'msg-row-out' : 'msg-row-in');
+                            const bubble = document.createElement('div');
+                            bubble.className = 'message-bubble ' + (m.direction === 'out' ? 'message-out' : 'message-in');
+                            bubble.textContent = m.text;
+                            row.appendChild(bubble);
+                            existBody.appendChild(row);
+                        });
+                        if (existBody.classList.contains('open')) {
+                            requestAnimationFrame(() => { existBody.scrollTop = existBody.scrollHeight; });
+                        }
+                    }
                 }
                 _renderedPartnerBoxes.set(partnerUid, existingBox);
                 continue; // skip rebuilding
@@ -1137,11 +1194,41 @@ async function renderMessagesList(force) {
             const send = document.createElement('button'); send.className = 'conv-send'; send.textContent = 'Send';
             footer.appendChild(input); footer.appendChild(send);
 
-            // header toggle
-            header.addEventListener('click', () => {
+            // header toggle — lazy-load messages from Firestore on first open
+            header.addEventListener('click', async () => {
                 const isOpen = body.classList.toggle('open');
                 footer.style.display = isOpen ? '' : 'none';
-                if (isOpen) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+                if (isOpen) {
+                    // Lazy-load messages from Firestore if not yet loaded
+                    if (!body.dataset.loaded && conversationId) {
+                        try {
+                            const db = window._firebaseDb;
+                            const user = window._firebaseAuth && window._firebaseAuth.currentUser;
+                            if (db && user) {
+                                const msgsRef = collection(db, 'conversations', conversationId, 'messages');
+                                const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
+                                const snap = await getDocs(msgsQuery);
+                                if (!snap.empty) {
+                                    body.innerHTML = ''; // Clear any stale content
+                                    snap.forEach(md => {
+                                        const mData = md.data();
+                                        const senderUid = mData.senderId || mData.sender || mData.fromUid;
+                                        const dir = senderUid === user.uid ? 'out' : 'in';
+                                        const row = document.createElement('div');
+                                        row.className = 'msg-row ' + (dir === 'out' ? 'msg-row-out' : 'msg-row-in');
+                                        const bubble = document.createElement('div');
+                                        bubble.className = 'message-bubble ' + (dir === 'out' ? 'message-out' : 'message-in');
+                                        bubble.textContent = mData.text || '';
+                                        row.appendChild(bubble);
+                                        body.appendChild(row);
+                                    });
+                                    body.dataset.loaded = 'true';
+                                }
+                            }
+                        } catch (e) { console.warn('Lazy load messages failed', e); }
+                    }
+                    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+                }
             });
 
             // send handler \u2014 optimistic UI with Firestore listener suppression
@@ -1216,10 +1303,8 @@ function startConversationListener() {
         const convRef = collection(db, 'conversations');
         const q = query(convRef, where('participants', 'array-contains', user.uid));
         _convListenerUnsub = window.fbOnSnapshot(q, () => {
-            const ml = document.getElementById('messageList');
-            if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
-                renderMessagesList();
-            }
+            // Always run — renderMessagesList safely appends new messages to existing boxes
+            renderMessagesList();
         }, (err) => { console.warn('Conversation listener error:', err.message); });
     } catch (e) { console.warn('startConversationListener failed:', e.message); }
 }
@@ -1501,7 +1586,7 @@ async function renderHistoryList() {
                         ack.style.color = '#0b4f8a';
                         ack.textContent = '\u2714 Sent';
                         actions.appendChild(ack);
-                        setTimeout(() => { try { actions.removeChild(ack); } catch (_) {} }, 2000);
+                        setTimeout(() => { try { actions.removeChild(ack); } catch (_) { } }, 2000);
                     } catch (e) {
                         console.error('Send message failed', e);
                         showToast('Send failed');

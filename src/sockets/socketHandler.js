@@ -435,6 +435,7 @@ module.exports = function (io) {
                     return participants.includes(senderUid) && participants.includes(recipientUid);
                 });
 
+                let isNewConversation = false;
                 let conversationDoc;
                 if (matchingConvs.length === 0) {
                     // Auto-create conversation between these two users
@@ -468,6 +469,7 @@ module.exports = function (io) {
                         lastMessageText: ''
                     });
                     conversationDoc = await newConvRef.get();
+                    isNewConversation = true;
                     console.log('✓ New conversation created:', newConvRef.id);
                 } else {
                     // Pick the most recently active conversation between these two users
@@ -485,7 +487,7 @@ module.exports = function (io) {
                 const senderData = senderDoc.exists ? senderDoc.data() : {};
                 const senderIsPremium = senderData.premium === true || senderData.isPremium === true;
 
-                if (!senderIsPremium) {
+                if (!senderIsPremium && !isNewConversation) {
                     const messagesSnap = await fireDb.collection('conversations').doc(conversationId)
                         .collection('messages')
                         .orderBy('createdAt', 'asc')

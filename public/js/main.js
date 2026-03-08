@@ -613,7 +613,9 @@ function attachSocketHandlers() {
                 if (typeof _msgSendCooldown !== 'undefined') _msgSendCooldown = Date.now() + 4000;
                 const ml = document.getElementById('messageList');
                 if (ml) {
-                    const partnerBox = ml.querySelector('.conv-box[data-partner-uid="' + fromUid + '"]');
+                    // Check both attribute names: app.js uses data-partner-uid, main.js uses data-partner-id
+                    let partnerBox = ml.querySelector('.conv-box[data-partner-uid="' + fromUid + '"]');
+                    if (!partnerBox) partnerBox = ml.querySelector('.conv-box[data-partner-id="' + fromUid + '"]');
                     if (partnerBox) {
                         const body = partnerBox.querySelector('.conv-body');
                         if (body) {
@@ -695,7 +697,7 @@ function attachSocketHandlers() {
                                 if (socket && socket.connected) {
                                     socket.emit('private-message', { recipientUid: fromUid, text: txt });
                                 }
-                                setTimeout(() => { try { b.classList.remove('msg-sending'); } catch (_) {} }, 1500);
+                                setTimeout(() => { try { b.classList.remove('msg-sending'); } catch (_) { } }, 1500);
                             } catch (e) { console.warn('Send failed', e); }
                         };
                         sendEl.addEventListener('click', doSend);
@@ -724,10 +726,10 @@ function attachSocketHandlers() {
                                                     avatar.appendChild(im);
                                                 }
                                             }
-                                        }).catch(() => {});
-                                }).catch(() => {});
+                                        }).catch(() => { });
+                                }).catch(() => { });
                             }
-                        } catch (_) {}
+                        } catch (_) { }
                     }
                 }
             } catch (e) { console.warn('[main.js] conv-box inject failed', e); }
@@ -888,6 +890,7 @@ function _buildConvBox(id, msgs) {
     const box = document.createElement('div');
     box.className = 'conv-box conv-box-enter';
     box.dataset.partnerId = id;
+    box.setAttribute('data-partner-uid', id);
 
     const header = document.createElement('div'); header.className = 'conv-header';
     const avatar = document.createElement('div'); avatar.className = 'conv-avatar';
@@ -1040,7 +1043,7 @@ function appendIncomingMessage(fromUid, text) {
 
     let entry = _convBoxes.get(fromUid);
     if (entry) {
-        // Conversation exists — append inline
+        // Conversation exists in our cache — append inline
         const row = _createMsgRow(text, 'in', false);
         entry.body.appendChild(row);
         _updateConvSub(fromUid);
@@ -1057,12 +1060,33 @@ function appendIncomingMessage(fromUid, text) {
             list.insertBefore(entry.box, list.firstChild);
         }
     } else {
-        // New conversation — build and prepend
-        const msgs = loadMessages().filter(m => (m.id || 'unknown') === fromUid);
-        msgs.sort((a, b) => (a.when || 0) - (b.when || 0));
-        const box = _buildConvBox(fromUid, msgs);
-        _updateConvSub(fromUid);
-        list.insertBefore(box, list.firstChild);
+        // Check if app.js already created a conv-box in the DOM
+        let existingDomBox = list.querySelector('.conv-box[data-partner-uid="' + fromUid + '"]');
+        if (!existingDomBox) existingDomBox = list.querySelector('.conv-box[data-partner-id="' + fromUid + '"]');
+        if (existingDomBox) {
+            // Box exists from app.js — inject into it, don't create a duplicate
+            const domBody = existingDomBox.querySelector('.conv-body');
+            if (domBody) {
+                const row = _createMsgRow(text, 'in', false);
+                domBody.appendChild(row);
+                if (domBody.classList.contains('open')) {
+                    requestAnimationFrame(() => { domBody.scrollTop = domBody.scrollHeight; });
+                } else {
+                    existingDomBox.classList.add('conv-unread-pulse');
+                    setTimeout(() => { existingDomBox.classList.remove('conv-unread-pulse'); }, 2000);
+                }
+            }
+            const sub = existingDomBox.querySelector('.conv-sub');
+            if (sub) sub.textContent = new Date().toLocaleString() + ' \u2014 ' + (text.length > 40 ? text.slice(0, 40) + '...' : text);
+            if (list.firstChild !== existingDomBox) list.insertBefore(existingDomBox, list.firstChild);
+        } else {
+            // No box exists at all — build and prepend
+            const msgs = loadMessages().filter(m => (m.id || 'unknown') === fromUid);
+            msgs.sort((a, b) => (a.when || 0) - (b.when || 0));
+            const box = _buildConvBox(fromUid, msgs);
+            _updateConvSub(fromUid);
+            list.insertBefore(box, list.firstChild);
+        }
     }
 }
 
@@ -1072,9 +1096,12 @@ function renderMessagesList() {
 
     const arr = loadMessages();
     if (!arr.length) {
-        // Clear cache and show empty state
+        // Clear cache and show empty state — but only if no Firestore-based conv-boxes exist
         _convBoxes.clear();
-        list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
+        const hasFirestoreBoxes = list.querySelector('.conv-box[data-partner-uid]');
+        if (!hasFirestoreBoxes) {
+            list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
+        }
         _lastMsgRenderCount = 0;
         return;
     }
@@ -1255,18 +1282,27 @@ async function renderHistoryList() {
             const partnerUid = participants.find(p => p !== uid);
             if (!partnerUid) continue;
 
-            // Fetch live partner profile from Firestore users collection
-            const { getDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
-            const partnerRef = doc(window._firebaseDb, 'users', partnerUid);
-            const partnerSnap = await getDoc(partnerRef);
-
+            // Use partner profile from conversation doc first (always accessible)
             let displayName = 'User';
             let photoURL = null;
 
-            if (partnerSnap.exists()) {
-                const partnerData = partnerSnap.data();
-                displayName = partnerData.displayName || 'User';
-                photoURL = partnerData.photoURL || null;
+            if (participantProfiles[partnerUid]) {
+                displayName = participantProfiles[partnerUid].displayName || 'User';
+                photoURL = participantProfiles[partnerUid].photoURL || null;
+            }
+
+            // Fallback: try fetching partner's user doc (may fail if rules restrict it)
+            if (!photoURL || displayName === 'User') {
+                try {
+                    const { getDoc, doc } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                    const partnerRef = doc(window._firebaseDb, 'users', partnerUid);
+                    const partnerSnap = await getDoc(partnerRef);
+                    if (partnerSnap.exists()) {
+                        const partnerData = partnerSnap.data();
+                        if (!photoURL && partnerData.photoURL) photoURL = partnerData.photoURL;
+                        if (displayName === 'User' && partnerData.displayName) displayName = partnerData.displayName;
+                    }
+                } catch (e) { /* permission denied — use participantProfiles data */ }
             }
 
             const durationSeconds = data.durationSeconds || 0;
