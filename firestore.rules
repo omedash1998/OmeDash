@@ -15,22 +15,33 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isOwner(uid);
       allow create: if isOwner(uid)
-        && request.resource.data.keys().hasAll(['uid','createdAt'])
+        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+        && request.resource.data.keys().hasOnly([
+             'uid', 'createdAt', 'isPremium', 'isBanned',
+             'reputation', 'onboardingComplete'
+           ])
         && request.resource.data.uid == uid
         && request.resource.data.get('isPremium', false) == false
         && request.resource.data.get('isBanned', false) == false;
       allow update: if isOwner(uid)
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasAny(['isPremium','isBanned','reputation','strikes',
-                     'bannedReason','bannedAt','bannedExpiresAt','unbannedAt',
-                     'premium','premiumSince','premiumExpiresAt']) == false
-        && (request.resource.data.uid == resource.data.uid)
-        && (request.resource.data.createdAt == resource.data.createdAt);
+            .hasAny(['isPremium', 'isBanned', 'reputation', 'strikes',
+                     'bannedReason', 'bannedAt', 'bannedExpiresAt', 'unbannedAt',
+                     'premium', 'premiumSince', 'premiumExpiresAt']) == false
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'lastLogin', 'gender', 'age', 'onboardingComplete',
+              'countryName', 'countryCode', 'countryEmoji',
+              'displayName', 'photoURL', 'lastRoomId',
+              'countryPref', 'genderPref'
+            ])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isOwner(uid);
     }
 
     match /waitingUsers/{uid} {
-      allow read: if false;
+      allow read: if isOwner(uid);
       allow create: if isOwner(uid)
         && request.resource.data.keys().hasOnly(['uid','status','createdAt'])
         && request.resource.data.uid == uid
