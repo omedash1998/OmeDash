@@ -178,7 +178,22 @@ async function startLocalStream() {
 }
 
 function createPeerConnection() {
-    const newPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const newPc = new RTCPeerConnection({
+        iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            {
+                urls: [
+                    "turn:64.23.227.110:3478",
+                    "turn:64.23.227.110:3478?transport=tcp",
+                    "turns:64.23.227.110:443"
+                ],
+                username: "test",
+                credential: "test123"
+            }
+        ],
+        iceCandidatePoolSize: 10
+    });
 
     newPc.onicecandidate = e => {
         if (e.candidate) socket.emit("ice-candidate", e.candidate);
