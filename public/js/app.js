@@ -167,7 +167,13 @@ function getPreferences() {
 async function startLocalStream() {
     if (localStream) return;
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        // Reuse the stream obtained at login (auth.js) if available
+        if (window._localStream) {
+            localStream = window._localStream;
+            window._localStream = null; // prevent stale references
+        } else {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        }
         localVideo.srcObject = localStream;
         log("local stream ready");
         stText.textContent = "Waiting for match...";

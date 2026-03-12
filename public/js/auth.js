@@ -198,6 +198,8 @@ onAuthStateChanged(auth, async (user) => {
             console.log('Onboarding complete, showing app for:', user.uid);
             window._onboardingComplete = true;
             revealApp();
+            // Request camera & mic immediately after login
+            requestCameraAndMic();
 
             // Sync "Your Gender" dropdown with the gender stored in Firestore
             try {
@@ -227,6 +229,32 @@ onAuthStateChanged(auth, async (user) => {
         revealApp();
     }
 });
+
+// ── Request camera & microphone right after login ──
+async function requestCameraAndMic() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const localVideo = document.getElementById('localVideo');
+        if (localVideo) {
+            localVideo.srcObject = stream;
+            localVideo.setAttribute('playsinline', '');
+            localVideo.setAttribute('autoplay', '');
+            localVideo.muted = true;
+            // Safari/iOS needs an explicit play() call
+            localVideo.play().catch(() => {});
+        }
+        // Store on window so app.js can reuse it instead of requesting again
+        window._localStream = stream;
+        console.log('Camera & mic permission granted');
+    } catch (err) {
+        console.warn('Camera/mic permission denied or unavailable:', err.name, err.message);
+        if (err.name === 'NotAllowedError') {
+            alert('Camera and microphone access is required for video chat. Please allow permissions and reload.');
+        } else if (err.name === 'NotFoundError') {
+            alert('No camera or microphone found on this device.');
+        }
+    }
+}
 
 // Expose signOut for settings logout button
 window._firebaseSignOut = () => signOut(auth);
