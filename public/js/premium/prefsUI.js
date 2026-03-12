@@ -22,7 +22,7 @@
     const token = await getToken();
     if (!token) return null;
     try {
-      const res = await fetch('/premium/status', {
+      const res = await fetch('https://app.omedash.com/premium/status', {
         headers: { Authorization: 'Bearer ' + token },
       });
       if (!res.ok) return null;
@@ -36,7 +36,7 @@
   async function savePrefs(country, gender) {
     const token = await getToken();
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch('/premium/set-preferences', {
+    const res = await fetch('https://app.omedash.com/premium/set-preferences', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -338,7 +338,7 @@ async function handlePayUnban(btn) {
         btn.disabled = true;
         btn.textContent = 'Processing...';
         const token = await auth.currentUser.getIdToken();
-        const res = await fetch('/create-unban-session', {
+        const res = await fetch('https://app.omedash.com/create-unban-session', {
             method: 'POST',
             headers: { Authorization: 'Bearer ' + token }
         });
@@ -791,7 +791,7 @@ function attachSocketHandlers() {
                     const auth = window._firebaseAuth;
                     if (auth && auth.currentUser) {
                         auth.currentUser.getIdToken().then(token => {
-                            fetch('/api/user-profile/' + fromUid, { headers: { Authorization: 'Bearer ' + token } })
+                            fetch('https://app.omedash.com/api/user-profile/' + fromUid, { headers: { Authorization: 'Bearer ' + token } })
                                 .then(r => r.ok ? r.json() : null)
                                 .then(p => {
                                     if (p) {
@@ -1060,7 +1060,7 @@ async function renderMessagesList(force) {
                         const auth = window._firebaseAuth;
                         if (auth && auth.currentUser) {
                             const token = await auth.currentUser.getIdToken();
-                            const profileRes = await fetch('/api/user-profile/' + partnerUid, {
+                            const profileRes = await fetch('https://app.omedash.com/api/user-profile/' + partnerUid, {
                                 headers: { Authorization: 'Bearer ' + token }
                             });
                             if (profileRes.ok) {
@@ -2115,7 +2115,7 @@ if (subscribeBtn) {
                 return;
             }
             const token = await user.getIdToken();
-            const res = await fetch('/create-checkout-session', {
+            const res = await fetch('https://app.omedash.com/create-checkout-session', {
                 method: 'POST',
                 headers: {
                     Authorization: `Bearer ${token}`
@@ -2330,7 +2330,7 @@ startBtn.addEventListener("click", async () => {
     // Hide mobile settings button when starting
     try { const mobileSettings = document.getElementById('mobileSettingsBtn'); if (mobileSettings) mobileSettings.style.display = 'none'; } catch (e) { }
 
-    socket = io();
+    socket = io("https://app.omedash.com");
 
     socket.on("connect", async () => {
         attachSocketHandlers();
@@ -2382,7 +2382,7 @@ async function checkAndCachePremiumStatus() {
         const auth = window._firebaseAuth;
         if (!auth || !auth.currentUser) return false;
         const token = await auth.currentUser.getIdToken();
-        const res = await fetch('/premium/status', { headers: { Authorization: 'Bearer ' + token } });
+        const res = await fetch('https://app.omedash.com/premium/status', { headers: { Authorization: 'Bearer ' + token } });
         if (!res.ok) return false;
         const data = await res.json();
         window._cachedPremiumStatus = data.premium === true;
@@ -2674,7 +2674,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             var token = await auth.currentUser.getIdToken();
-            var res = await fetch('/premium/status', {
+            var res = await fetch('https://app.omedash.com/premium/status', {
                 headers: { Authorization: 'Bearer ' + token }
             });
             var data = await res.json();
@@ -2723,7 +2723,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             var token = await auth.currentUser.getIdToken();
-            var res = await fetch('/verify-checkout', {
+            var res = await fetch('https://app.omedash.com/verify-checkout', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2777,7 +2777,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             var token = await auth.currentUser.getIdToken();
-            var res = await fetch('/verify-unban', {
+            var res = await fetch('https://app.omedash.com/verify-unban', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

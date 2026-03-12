@@ -20,7 +20,7 @@
     var token = await getToken();
     if (!token) return null;
     try {
-      var res = await fetch('/premium/status', {
+      var res = await fetch('https://app.omedash.com/premium/status', {
         headers: { Authorization: 'Bearer ' + token },
       });
       if (!res.ok) return null;
@@ -33,7 +33,7 @@
   async function togglePremium(on) {
     var token = await getToken();
     if (!token) throw new Error('Not authenticated');
-    var res = await fetch('/premium/toggle-dev', {
+    var res = await fetch('https://app.omedash.com/premium/toggle-dev', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

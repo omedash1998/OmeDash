@@ -24,7 +24,7 @@ out.append('\n')
 
 # Script references
 out.append('    <!-- ========== APPLICATION SCRIPTS ========== -->\n')
-out.append('    <script src="/socket.io/socket.io.js"></script>\n')
+out.append('    <script src="https://app.omedash.com/socket.io/socket.io.js"></script>\n')
 out.append('    <script src="/js/app.js"></script>\n')
 out.append('\n')
 

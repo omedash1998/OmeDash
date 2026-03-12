@@ -728,7 +728,7 @@ function attachSocketHandlers() {
                             const auth = window._firebaseAuth;
                             if (auth && auth.currentUser) {
                                 auth.currentUser.getIdToken().then(token => {
-                                    fetch('/api/user-profile/' + fromUid, { headers: { Authorization: 'Bearer ' + token } })
+                                    fetch('https://app.omedash.com/api/user-profile/' + fromUid, { headers: { Authorization: 'Bearer ' + token } })
                                         .then(r => r.ok ? r.json() : null)
                                         .then(p => {
                                             if (p) {
@@ -2161,7 +2161,7 @@ startBtn.addEventListener("click", async () => {
     // Hide mobile settings button when starting
     try { const mobileSettings = document.getElementById('mobileSettingsBtn'); if (mobileSettings) mobileSettings.style.display = 'none'; } catch (e) { }
 
-    socket = io();
+    socket = io("https://app.omedash.com");
 
     socket.on("connect", async () => {
         attachSocketHandlers();

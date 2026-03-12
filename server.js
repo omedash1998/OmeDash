@@ -1,10 +1,25 @@
 require('dotenv').config();
 const express = require("express");
+const cors = require("cors");
 const app = express();
+const corsOptions = {
+  origin: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 const http = require("http");
 const server = http.createServer(app);
 const { Server } = require("socket.io");
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: ["https://omedash.com", "https://www.omedash.com"],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
 const config = require('./src/config');
 const socketHandler = require('./src/sockets/socketHandler');
