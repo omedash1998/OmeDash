@@ -2621,10 +2621,8 @@ async function checkAndCachePremiumStatus() {
 })();
 
 // === Camera Auto-Start ===
-// Try to open camera on page load (best-effort; browsers may require user gesture)
-document.addEventListener('DOMContentLoaded', () => {
-    try { startLocalStream(); } catch (e) { console.warn('startLocalStream failed on load', e); }
-}, { passive: true });
+// Camera is now requested AFTER login by auth.js → requestCameraAndMic()
+// Do NOT call startLocalStream() here — it would prompt before the user is authenticated.
 
 // === Premium Script Loader ===
 // Dynamically loads premium UI scripts if the premium system is available.
