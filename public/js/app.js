@@ -1,3 +1,35 @@
+// ── Duplicate Tab Guard ─────────────────────────────────────
+(function () {
+    const channel = new BroadcastChannel('omedash_tab_guard');
+    let isBlocked = false;
+
+    // When we receive a ping from a new tab, respond with pong
+    channel.onmessage = (e) => {
+        if (e.data === 'ping' && !isBlocked) {
+            channel.postMessage('pong');
+        }
+        if (e.data === 'pong' && !isBlocked) {
+            // Another tab is already active — block this one
+            isBlocked = true;
+            const overlay = document.createElement('div');
+            overlay.style.cssText =
+                'position:fixed;inset:0;z-index:999999;background:rgba(10,10,20,0.96);' +
+                'display:flex;align-items:center;justify-content:center;flex-direction:column;' +
+                'color:#fff;font-family:Inter,sans-serif;text-align:center;padding:2rem;';
+            overlay.innerHTML =
+                '<div style="font-size:2.5rem;margin-bottom:1rem;">⚠️</div>' +
+                '<div style="font-size:1.25rem;font-weight:600;margin-bottom:.5rem;">OmeDash is already open in another tab</div>' +
+                '<div style="font-size:.9rem;opacity:.7;">Please close this tab or close the other one first.</div>';
+            document.body.appendChild(overlay);
+            // Stop all further script execution in this file
+            throw new Error('OmeDash duplicate tab blocked');
+        }
+    };
+
+    // Ask if any other tab is already open
+    channel.postMessage('ping');
+})();
+
 let socket = null;
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
