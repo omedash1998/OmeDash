@@ -1508,14 +1508,8 @@ function openHistoryModal() {
 
     renderHistoryList();
     // default to Connections tab
-    const hc = document.getElementById('historyTabConnections');
-    const hm = document.getElementById('historyTabMessages');
-    if (hc && hm) {
-        hc.classList.add('history-tab-active');
-        hm.classList.remove('history-tab-active');
-        document.getElementById('historyList').style.display = 'block';
-        document.getElementById('messageList').style.display = 'none';
-    }
+    resetTabs();
+    activateConnections();
     // enable/disable clear button depending on whether there's history
     try {
         const clearBtn = document.getElementById('clearHistoryBtn');
@@ -1618,31 +1612,48 @@ if (clearHistoryConfirm) {
     clearHistoryConfirm.addEventListener('click', (e) => { if (e.target === clearHistoryConfirm) closeClearHistoryConfirm(); });
 }
 
-// tab switching for history/messages
+// tab switching helpers — single source of truth for tab state
 const historyTabConnections = document.getElementById('historyTabConnections');
 const historyTabMessages = document.getElementById('historyTabMessages');
+
+function resetTabs() {
+    if (historyTabConnections) historyTabConnections.classList.remove('active');
+    if (historyTabMessages) historyTabMessages.classList.remove('active');
+    const hl = document.getElementById('historyList');
+    const ml = document.getElementById('messageList');
+    if (hl) hl.style.display = 'none';
+    if (ml) ml.style.display = 'none';
+}
+
+function activateConnections() {
+    if (historyTabConnections) historyTabConnections.classList.add('active');
+    const hl = document.getElementById('historyList');
+    if (hl) hl.style.display = 'flex';
+    try {
+        if (clearHistoryBtn) {
+            clearHistoryBtn.style.display = '';
+            const arr = loadHistory();
+            clearHistoryBtn.disabled = !arr || arr.length === 0;
+        }
+    } catch (e) { }
+}
+
+function activateMessages() {
+    if (historyTabMessages) historyTabMessages.classList.add('active');
+    const ml = document.getElementById('messageList');
+    if (ml) ml.style.display = 'flex';
+    try { if (clearHistoryBtn) clearHistoryBtn.style.display = 'none'; } catch (e) { }
+    renderMessagesList();
+}
+
 if (historyTabConnections && historyTabMessages) {
     historyTabConnections.addEventListener('click', () => {
-        historyTabConnections.classList.add('active');
-        historyTabMessages.classList.remove('active');
-        document.getElementById('historyList').style.display = 'flex';
-        document.getElementById('messageList').style.display = 'none';
-        try {
-            if (clearHistoryBtn) {
-                // show and enable/disable based on stored history
-                clearHistoryBtn.style.display = '';
-                const arr = loadHistory();
-                clearHistoryBtn.disabled = !arr || arr.length === 0;
-            }
-        } catch (e) { }
+        resetTabs();
+        activateConnections();
     });
     historyTabMessages.addEventListener('click', () => {
-        historyTabMessages.classList.add('active');
-        historyTabConnections.classList.remove('active');
-        document.getElementById('historyList').style.display = 'none';
-        document.getElementById('messageList').style.display = 'flex';
-        try { if (clearHistoryBtn) clearHistoryBtn.style.display = 'none'; } catch (e) { }
-        renderMessagesList();
+        resetTabs();
+        activateMessages();
     });
 }
 
