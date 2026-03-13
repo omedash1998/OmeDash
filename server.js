@@ -359,6 +359,10 @@ app.get('/api/user-profile/:uid', async (req, res) => {
 // Initialize socket event handlers
 socketHandler(io);
 
+// Initialize server-side matching module (in-memory queue)
+const { initializeMatching } = require("./server/matching/socketHandlers");
+initializeMatching(io);
+
 // -- Premium socket augmentation (dev-only) --
 if (process.env.PREMIUM_DEV === 'true') {
   const expiry = require('./src/premium/expiry');
