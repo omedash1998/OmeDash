@@ -241,7 +241,7 @@ async function requestCameraAndMic() {
             localVideo.setAttribute('autoplay', '');
             localVideo.muted = true;
             // Safari/iOS needs an explicit play() call
-            localVideo.play().catch(() => {});
+            localVideo.play().catch(() => { });
         }
         // Store on window so app.js can reuse it instead of requesting again
         window._localStream = stream;
