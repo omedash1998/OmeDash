@@ -155,8 +155,8 @@ app.post('/create-checkout-session', async (req, res) => {
         },
       ],
       metadata: { uid, type: 'premium' },
-      success_url: 'http://localhost:3000?checkout_success={CHECKOUT_SESSION_ID}',
-      cancel_url: 'http://localhost:3000',
+      success_url: 'http://omedash.com?checkout_success={CHECKOUT_SESSION_ID}',
+      cancel_url: 'http://omedash.com',
     });
 
     res.json({ url: session.url });
@@ -234,8 +234,8 @@ app.post('/create-unban-session', async (req, res) => {
         },
       ],
       metadata: { uid, type: 'unban' },
-      success_url: 'http://localhost:3000/?unban_success={CHECKOUT_SESSION_ID}',
-      cancel_url: 'http://localhost:3000',
+      success_url: 'https://omedash.com/?unban_success={CHECKOUT_SESSION_ID}',
+      cancel_url: 'https://omedash.com',
     });
 
     res.json({ url: session.url });
