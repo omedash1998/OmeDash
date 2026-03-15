@@ -35,17 +35,17 @@ service cloud.firestore {
               'displayName', 'photoURL', 'lastRoomId',
               'countryPref', 'genderPref'
             ])
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.uid == resource.data.uid;
       allow delete: if isOwner(uid);
     }
 
     match /waitingUsers/{uid} {
       allow read: if isOwner(uid);
       allow create: if isOwner(uid)
-        && request.resource.data.keys().hasOnly(['uid','status','createdAt'])
+        && request.resource.data.keys().hasAll(['uid','status','createdAt'])
         && request.resource.data.uid == uid
-        && request.resource.data.status == 'waiting';
+        && request.resource.data.status == 'waiting'
+        && isValidTimestampField(request.resource.data.createdAt);
       allow delete: if isOwner(uid);
       allow update: if false;
     }

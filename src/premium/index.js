@@ -50,7 +50,7 @@ async function authMiddleware(req, res, next) {
 router.get('/status', authMiddleware, async (req, res) => {
   try {
     if (process.env.PREMIUM_DEV !== 'true') {
-      return res.json({ isPremium: false, countryPref: null, genderPref: null });
+      return res.json({ isPremium: false, premium: false, countryPref: null, genderPref: null });
     }
 
     const snap = await fireDb.collection('users').doc(req.uid).get();
@@ -60,6 +60,7 @@ router.get('/status', authMiddleware, async (req, res) => {
 
     return res.json({
       isPremium: active,
+      premium: active, // added to support the main app.js frontend
       countryPref: data.countryPref || null,
       genderPref: data.genderPref || null,
     });
