@@ -1818,12 +1818,26 @@ async function doClearHistory() {
         );
         await Promise.all(promises);
 
-        // Also clear localStorage connections
-        try { localStorage.removeItem('chatHistory'); } catch (e) { }
+        // Clear localStorage history and messages
+        try { localStorage.removeItem('vchat_history'); } catch (e) { }
+        try { localStorage.removeItem('vchat_messages'); } catch (e) { }
+
+        // Also emit to server for server-side cleanup (if socket available)
+        try { if (typeof socket !== 'undefined' && socket && socket.connected) socket.emit('clear-history'); } catch (e) { }
+
+        // Clear cached DOM boxes
+        try { _renderedPartnerBoxes.clear(); } catch (e) { }
+        try { if (typeof _convBoxes !== 'undefined') _convBoxes.clear(); } catch (e) { }
 
         showToast('History cleared');
         closeClearHistoryConfirm();
         renderHistoryList();
+
+        // Also clear the Messages tab
+        const ml = document.getElementById('messageList');
+        if (ml) {
+            ml.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
+        }
     } catch (e) {
         console.error('Clear history request failed', e);
         showToast('Failed to clear history');
@@ -1858,8 +1872,7 @@ function activateConnections() {
     try {
         if (clearHistoryBtn) {
             clearHistoryBtn.style.display = '';
-            const arr = loadHistory();
-            clearHistoryBtn.disabled = !arr || arr.length === 0;
+            clearHistoryBtn.disabled = false;
         }
     } catch (e) { }
 }

@@ -1630,32 +1630,12 @@ function closeClearHistoryConfirm() {
     document.body.focus();
 }
 
-function doClearHistory() {
-    try {
-        const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
-        if (!user) {
-            showToast('Not logged in');
-            closeClearHistoryConfirm();
-            return;
-        }
-
-        // Emit to server - server handles Firestore delete
-        if (socket) {
-            socket.emit('clear-history');
-            closeClearHistoryConfirm();
-        } else {
-            showToast('Connection error');
-            closeClearHistoryConfirm();
-        }
-    } catch (e) {
-        console.error('Clear history request failed', e);
-        showToast('Failed to clear history');
-        closeClearHistoryConfirm();
-    }
-}
+// doClearHistory is handled by app.js — do not duplicate here.
+// main.js only binds the open/close/cancel confirm handlers.
+// The actual clear logic (Firestore + localStorage + socket + DOM) is in app.js.
 
 if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', openClearHistoryConfirm);
-if (clearHistoryConfirmBtn) clearHistoryConfirmBtn.addEventListener('click', doClearHistory);
+// clearHistoryConfirmBtn binding is in app.js — no duplicate here
 if (clearHistoryCancelBtn) clearHistoryCancelBtn.addEventListener('click', closeClearHistoryConfirm);
 if (clearHistoryConfirm) {
     clearHistoryConfirm.addEventListener('click', (e) => { if (e.target === clearHistoryConfirm) closeClearHistoryConfirm(); });
@@ -1681,8 +1661,7 @@ function activateConnections() {
     try {
         if (clearHistoryBtn) {
             clearHistoryBtn.style.display = '';
-            const arr = loadHistory();
-            clearHistoryBtn.disabled = !arr || arr.length === 0;
+            clearHistoryBtn.disabled = false;
         }
     } catch (e) { }
 }
