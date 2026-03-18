@@ -33,7 +33,7 @@ service cloud.firestore {
               'lastLogin', 'gender', 'age', 'onboardingComplete',
               'countryName', 'countryCode', 'countryEmoji',
               'displayName', 'photoURL', 'lastRoomId',
-              'countryPref', 'genderPref'
+              'countryPref', 'genderPref', 'updatedAt'
             ])
         && request.resource.data.uid == resource.data.uid;
       allow delete: if isOwner(uid);

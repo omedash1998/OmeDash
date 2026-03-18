@@ -945,20 +945,47 @@ function _buildConvBox(id, msgs) {
         openConfirmDeleteModal(
             'Delete conversation',
             'Delete this conversation and its messages?',
-            () => {
+            async () => {
                 try {
+                    // Remove from localStorage
                     const arr = loadMessages();
                     const filtered = arr.filter(m => (m.id || 'unknown') !== id);
                     saveMessages(filtered);
                     _convBoxes.delete(id);
                     box.classList.add('conv-box-exit');
                     setTimeout(() => { try { box.remove(); } catch (_) { } }, 250);
+
+                    // Also set deletedFor in Firestore so realtime listener won't re-create
+                    try {
+                        const user = window._firebaseAuth && window._firebaseAuth.currentUser;
+                        if (user && window._firebaseDb && id !== 'unknown') {
+                            const { collection: col, query: qu, where: wh, getDocs: gd, doc: fbDoc, updateDoc: fbUpdate, serverTimestamp: fbTs } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                            const convRef = col(window._firebaseDb, 'conversations');
+                            const convQuery = qu(convRef, wh('participants', 'array-contains', user.uid));
+                            const snap = await gd(convQuery);
+                            const updates = [];
+                            snap.forEach(d => {
+                                const parts = d.data().participants || [];
+                                if (parts.includes(id)) {
+                                    updates.push(fbUpdate(fbDoc(window._firebaseDb, 'conversations', d.id), { [`deletedFor.${user.uid}`]: fbTs() }));
+                                }
+                            });
+                            if (updates.length) await Promise.all(updates);
+                        }
+                    } catch (fe) { console.warn('Firestore deletedFor update failed', fe); }
+
+                    // Also remove from app.js rendered cache
+                    if (typeof _renderedPartnerBoxes !== 'undefined') _renderedPartnerBoxes.delete(id);
+
                     // show empty if none left
                     const list = document.getElementById('messageList');
                     if (list && _convBoxes.size === 0) {
-                        setTimeout(() => {
-                            list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
-                        }, 260);
+                        const remaining = list.querySelectorAll('.conv-box');
+                        if (remaining.length <= 1) {
+                            setTimeout(() => {
+                                list.innerHTML = '<div class="history-empty"><div class="history-empty-icon">💬</div><div class="history-empty-text">No messages yet</div><div style="font-size:12px;color:#94a8c0;">Your conversations will appear here</div></div>';
+                            }, 260);
+                        }
                     }
                 } catch (err) { console.warn('delete conversation failed', err); }
             }

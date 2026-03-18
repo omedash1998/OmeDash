@@ -780,6 +780,19 @@ function attachSocketHandlers() {
                                 const db = window._firebaseDb;
                                 const user = window._firebaseAuth && window._firebaseAuth.currentUser;
                                 if (db && user) {
+                                    // Get deletedFor cutoff so we don't show pre-deletion messages
+                                    let lazyCutoff = null;
+                                    try {
+                                        const { doc: fbDocFn, getDoc: fbGetDocFn } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                                        const convSnap = await fbGetDocFn(fbDocFn(db, 'conversations', conversationId));
+                                        if (convSnap.exists()) {
+                                            const df = convSnap.data().deletedFor || {};
+                                            const dm = df[user.uid];
+                                            if (dm === true) { body.dataset.loaded = 'true'; return; }
+                                            if (dm && dm.toDate) lazyCutoff = dm.toDate().getTime();
+                                            else if (dm && typeof dm === 'object' && dm.seconds) lazyCutoff = dm.seconds * 1000;
+                                        }
+                                    } catch (_) { }
                                     const msgsRef = collection(db, 'conversations', conversationId, 'messages');
                                     const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
                                     const snap = await getDocs(msgsQuery);
@@ -787,6 +800,11 @@ function attachSocketHandlers() {
                                         body.innerHTML = '';
                                         snap.forEach(md => {
                                             const mData = md.data();
+                                            // Filter by deletedFor cutoff
+                                            if (lazyCutoff && mData.createdAt) {
+                                                const msgTime = mData.createdAt.toDate ? mData.createdAt.toDate().getTime() : mData.createdAt;
+                                                if (msgTime <= lazyCutoff) return;
+                                            }
                                             const senderUid = mData.senderId || mData.sender || mData.fromUid;
                                             const dir = senderUid === user.uid ? 'out' : 'in';
                                             const row = document.createElement('div');
@@ -1278,6 +1296,19 @@ async function renderMessagesList(force) {
                             const db = window._firebaseDb;
                             const user = window._firebaseAuth && window._firebaseAuth.currentUser;
                             if (db && user) {
+                                // Get deletedFor cutoff so we don't show pre-deletion messages
+                                let lazyCutoff = null;
+                                try {
+                                    const { doc: fbDocFn2, getDoc: fbGetDocFn2 } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+                                    const convSnap = await fbGetDocFn2(fbDocFn2(db, 'conversations', conversationId));
+                                    if (convSnap.exists()) {
+                                        const df = convSnap.data().deletedFor || {};
+                                        const dm = df[user.uid];
+                                        if (dm === true) { body.dataset.loaded = 'true'; return; }
+                                        if (dm && dm.toDate) lazyCutoff = dm.toDate().getTime();
+                                        else if (dm && typeof dm === 'object' && dm.seconds) lazyCutoff = dm.seconds * 1000;
+                                    }
+                                } catch (_) { }
                                 const msgsRef = collection(db, 'conversations', conversationId, 'messages');
                                 const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
                                 const snap = await getDocs(msgsQuery);
@@ -1285,6 +1316,11 @@ async function renderMessagesList(force) {
                                     body.innerHTML = ''; // Clear any stale content
                                     snap.forEach(md => {
                                         const mData = md.data();
+                                        // Filter by deletedFor cutoff
+                                        if (lazyCutoff && mData.createdAt) {
+                                            const msgTime = mData.createdAt.toDate ? mData.createdAt.toDate().getTime() : mData.createdAt;
+                                            if (msgTime <= lazyCutoff) return;
+                                        }
                                         const senderUid = mData.senderId || mData.sender || mData.fromUid;
                                         const dir = senderUid === user.uid ? 'out' : 'in';
                                         const row = document.createElement('div');
@@ -2031,6 +2067,25 @@ function readFileAsDataURL(file) {
     });
 }
 
+// Compress and resize an image data URL to fit within Firestore doc limits
+function compressImage(dataUrl, maxSize = 200, quality = 0.7) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let w = img.width, h = img.height;
+            if (w > h) { if (w > maxSize) { h = Math.round(h * maxSize / w); w = maxSize; } }
+            else { if (h > maxSize) { w = Math.round(w * maxSize / h); h = maxSize; } }
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = reject;
+        img.src = dataUrl;
+    });
+}
+
 if (profilePicInput) {
     profilePicInput.addEventListener('change', async (e) => {
         const f = e.target.files && e.target.files[0];
@@ -2064,7 +2119,10 @@ if (saveProfileBtn) {
 
             let picData = null;
             if (profilePicInput && profilePicInput.files && profilePicInput.files[0]) {
-                try { picData = await readFileAsDataURL(profilePicInput.files[0]); } catch (e) { console.error(e); }
+                try {
+                    const rawDataUrl = await readFileAsDataURL(profilePicInput.files[0]);
+                    picData = await compressImage(rawDataUrl, 200, 0.7);
+                } catch (e) { console.error(e); }
             } else {
                 // if preview contains an <img> tag, keep that src
                 const img = profilePreview.querySelector('img');
@@ -2085,8 +2143,7 @@ if (saveProfileBtn) {
 
             await setDoc(userRef, {
                 displayName: displayName,
-                photoURL: photoURL,
-                updatedAt: serverTimestamp()
+                photoURL: photoURL
             }, { merge: true });
 
             console.log('✓ Profile saved to Firestore');
