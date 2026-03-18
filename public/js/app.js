@@ -760,6 +760,17 @@ function attachSocketHandlers() {
                 footer.appendChild(input); footer.appendChild(send);
 
                 header.addEventListener('click', async () => {
+                    // Close any other open conversation first
+                    const ml = document.getElementById('messageList');
+                    if (ml) {
+                        ml.querySelectorAll('.conv-body.open').forEach(ob => {
+                            if (ob !== body) {
+                                ob.classList.remove('open');
+                                const of = ob.closest('.conv-box')?.querySelector('.conv-footer');
+                                if (of) of.style.display = 'none';
+                            }
+                        });
+                    }
                     const isOpen = body.classList.toggle('open');
                     footer.style.display = isOpen ? '' : 'none';
                     if (isOpen) {
@@ -1249,6 +1260,15 @@ async function renderMessagesList(force) {
 
             // header toggle — lazy-load messages from Firestore on first open
             header.addEventListener('click', async () => {
+                // Close any other open conversation first
+                const allOpenBodies = list.querySelectorAll('.conv-body.open');
+                allOpenBodies.forEach(ob => {
+                    if (ob !== body) {
+                        ob.classList.remove('open');
+                        const of = ob.closest('.conv-box')?.querySelector('.conv-footer');
+                        if (of) of.style.display = 'none';
+                    }
+                });
                 const isOpen = body.classList.toggle('open');
                 footer.style.display = isOpen ? '' : 'none';
                 if (isOpen) {

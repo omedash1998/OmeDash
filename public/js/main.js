@@ -693,6 +693,17 @@ function attachSocketHandlers() {
                         footer.appendChild(inputEl); footer.appendChild(sendEl);
 
                         header.addEventListener('click', () => {
+                            // Close any other open conversation first
+                            const ml2 = document.getElementById('messageList');
+                            if (ml2) {
+                                ml2.querySelectorAll('.conv-body.open').forEach(ob => {
+                                    if (ob !== bodyEl) {
+                                        ob.classList.remove('open');
+                                        const of2 = ob.closest('.conv-box')?.querySelector('.conv-footer');
+                                        if (of2) of2.style.display = 'none';
+                                    }
+                                });
+                            }
                             const isOpen = bodyEl.classList.toggle('open');
                             footer.style.display = isOpen ? '' : 'none';
                             if (isOpen) requestAnimationFrame(() => { bodyEl.scrollTop = bodyEl.scrollHeight; });
@@ -970,6 +981,17 @@ function _buildConvBox(id, msgs) {
 
     // header toggle with smooth transition
     header.addEventListener('click', () => {
+        // Close any other open conversation first
+        const mlBox = document.getElementById('messageList');
+        if (mlBox) {
+            mlBox.querySelectorAll('.conv-body.open').forEach(ob => {
+                if (ob !== body) {
+                    ob.classList.remove('open');
+                    const of3 = ob.closest('.conv-box')?.querySelector('.conv-footer');
+                    if (of3) of3.style.display = 'none';
+                }
+            });
+        }
         const isOpen = body.classList.toggle('open');
         if (isOpen) {
             requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
