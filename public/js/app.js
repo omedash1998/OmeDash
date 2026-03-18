@@ -2268,11 +2268,37 @@ if (subscribeBtn) {
     });
 }
 
-// Manage membership button (placeholder)
+// Manage membership button — redirect to Stripe Customer Portal
 const manageMembershipBtn = document.getElementById('manageMembershipBtn');
 if (manageMembershipBtn) {
-    manageMembershipBtn.addEventListener('click', () => {
-        alert('Manage membership (placeholder) — implement account management flow on server.');
+    manageMembershipBtn.addEventListener('click', async () => {
+        try {
+            const user = window._firebaseAuth ? window._firebaseAuth.currentUser : null;
+            if (!user) {
+                showToast('Not logged in');
+                return;
+            }
+            manageMembershipBtn.disabled = true;
+            manageMembershipBtn.textContent = 'Loading...';
+            const token = await user.getIdToken();
+            const res = await fetch('https://app.omedash.com/create-portal-session', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                showToast(data.error || 'Could not open portal');
+                manageMembershipBtn.disabled = false;
+                manageMembershipBtn.textContent = 'Manage Membership';
+            }
+        } catch (err) {
+            console.error('Portal session failed', err);
+            showToast('Failed to open membership portal');
+            manageMembershipBtn.disabled = false;
+            manageMembershipBtn.textContent = 'Manage Membership';
+        }
     });
 }
 

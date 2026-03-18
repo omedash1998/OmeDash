@@ -435,66 +435,36 @@ module.exports = function (io) {
                     return participants.includes(senderUid) && participants.includes(recipientUid);
                 });
 
-                let isNewConversation = false;
-                let conversationDoc;
-                if (matchingConvs.length === 0) {
-                    // Auto-create conversation between these two users
-                    console.log('No conversation found, creating one:', senderUid, '↔', recipientUid);
-                    const participantProfiles = {};
-                    try {
-                        const sDoc = await fireDb.collection('users').doc(senderUid).get();
-                        if (sDoc.exists) {
-                            const sd = sDoc.data();
-                            participantProfiles[senderUid] = { displayName: sd.displayName || 'User', photoURL: sd.photoURL || null };
-                        } else {
-                            participantProfiles[senderUid] = { displayName: 'User', photoURL: null };
-                        }
-                        const rDoc = await fireDb.collection('users').doc(recipientUid).get();
-                        if (rDoc.exists) {
-                            const rd = rDoc.data();
-                            participantProfiles[recipientUid] = { displayName: rd.displayName || 'User', photoURL: rd.photoURL || null };
-                        } else {
-                            participantProfiles[recipientUid] = { displayName: 'User', photoURL: null };
-                        }
-                    } catch (e) {
-                        console.warn('Failed to fetch profiles for new conversation:', e);
-                        participantProfiles[senderUid] = participantProfiles[senderUid] || { displayName: 'User', photoURL: null };
-                        participantProfiles[recipientUid] = participantProfiles[recipientUid] || { displayName: 'User', photoURL: null };
+                const isNewConversation = matchingConvs.length === 0;
+
+                // ── Premium gate: check sender status BEFORE creating any docs ──
+                const senderDoc = await fireDb.collection('users').doc(senderUid).get();
+                const senderData = senderDoc.exists ? senderDoc.data() : {};
+                const senderIsPremium = senderData.premium === true || senderData.isPremium === true;
+
+                if (!senderIsPremium) {
+                    if (isNewConversation) {
+                        // Non-premium user cannot initiate a new conversation
+                        console.log('Non-premium user tried to initiate new conversation:', senderUid);
+                        socket.emit('need_payment', { reason: 'initiate_message' });
+                        return;
                     }
-                    const newConvRef = await fireDb.collection('conversations').add({
-                        participants: [senderUid, recipientUid],
-                        participantProfiles: participantProfiles,
-                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
-                        lastMessageText: ''
-                    });
-                    conversationDoc = await newConvRef.get();
-                    isNewConversation = true;
-                    console.log('✓ New conversation created:', newConvRef.id);
-                } else {
-                    // Pick the most recently active conversation between these two users
+
+                    // Existing conversation — pick the most recent one to check messages
                     matchingConvs.sort((a, b) => {
                         const aTime = a.data().lastMessageAt ? a.data().lastMessageAt.toMillis() : 0;
                         const bTime = b.data().lastMessageAt ? b.data().lastMessageAt.toMillis() : 0;
                         return bTime - aTime;
                     });
-                    conversationDoc = matchingConvs[0];
-                }
+                    const existingConvId = matchingConvs[0].id;
 
-                const conversationId = conversationDoc.id;
-
-                const senderDoc = await fireDb.collection('users').doc(senderUid).get();
-                const senderData = senderDoc.exists ? senderDoc.data() : {};
-                const senderIsPremium = senderData.premium === true || senderData.isPremium === true;
-
-                if (!senderIsPremium && !isNewConversation) {
-                    const messagesSnap = await fireDb.collection('conversations').doc(conversationId)
+                    const messagesSnap = await fireDb.collection('conversations').doc(existingConvId)
                         .collection('messages')
                         .orderBy('createdAt', 'asc')
                         .get();
 
                     if (messagesSnap.empty) {
-                        console.log('Non-premium user tried to initiate conversation:', senderUid);
+                        console.log('Non-premium user tried to initiate conversation (empty):', senderUid);
                         socket.emit('need_payment', { reason: 'initiate_message' });
                         return;
                     }
@@ -522,6 +492,48 @@ module.exports = function (io) {
 
                     console.log('Non-premium user replying in conversation with premium user:', senderUid);
                 }
+
+                // ── Passed premium gate — resolve or create conversation doc ──
+                let conversationDoc;
+                if (isNewConversation) {
+                    // Only premium users reach here for new conversations
+                    console.log('Premium user creating conversation:', senderUid, '↔', recipientUid);
+                    const participantProfiles = {};
+                    try {
+                        // Reuse senderData we already fetched
+                        participantProfiles[senderUid] = { displayName: senderData.displayName || 'User', photoURL: senderData.photoURL || null };
+                        const rDoc = await fireDb.collection('users').doc(recipientUid).get();
+                        if (rDoc.exists) {
+                            const rd = rDoc.data();
+                            participantProfiles[recipientUid] = { displayName: rd.displayName || 'User', photoURL: rd.photoURL || null };
+                        } else {
+                            participantProfiles[recipientUid] = { displayName: 'User', photoURL: null };
+                        }
+                    } catch (e) {
+                        console.warn('Failed to fetch profiles for new conversation:', e);
+                        participantProfiles[senderUid] = participantProfiles[senderUid] || { displayName: 'User', photoURL: null };
+                        participantProfiles[recipientUid] = participantProfiles[recipientUid] || { displayName: 'User', photoURL: null };
+                    }
+                    const newConvRef = await fireDb.collection('conversations').add({
+                        participants: [senderUid, recipientUid],
+                        participantProfiles: participantProfiles,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+                        lastMessageText: ''
+                    });
+                    conversationDoc = await newConvRef.get();
+                    console.log('✓ New conversation created:', newConvRef.id);
+                } else {
+                    // Pick the most recently active conversation
+                    matchingConvs.sort((a, b) => {
+                        const aTime = a.data().lastMessageAt ? a.data().lastMessageAt.toMillis() : 0;
+                        const bTime = b.data().lastMessageAt ? b.data().lastMessageAt.toMillis() : 0;
+                        return bTime - aTime;
+                    });
+                    conversationDoc = matchingConvs[0];
+                }
+
+                const conversationId = conversationDoc.id;
 
                 const messageRef = await fireDb.collection('conversations').doc(conversationId)
                     .collection('messages').add({

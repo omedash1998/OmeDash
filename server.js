@@ -79,12 +79,17 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     } else {
       // ── Premium activation (type === 'premium' or legacy) ──
       try {
-        await require('./src/firebase').fireDb.collection('users').doc(uid).set({
+        const updateData = {
           premium: true,
           premiumSince: new Date(),
           isPremium: true,
           premiumExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        }, { merge: true });
+        };
+        // Save Stripe customer ID for portal access
+        if (session.customer) {
+          updateData.stripeCustomerId = session.customer;
+        }
+        await require('./src/firebase').fireDb.collection('users').doc(uid).set(updateData, { merge: true });
         console.log(`[Stripe Webhook] Premium activated for uid: ${uid}`);
       } catch (err) {
         console.error('[Stripe Webhook] Firestore update failed:', err.message);
@@ -194,12 +199,17 @@ app.post('/verify-checkout', async (req, res) => {
     }
 
     // Activate premium
-    await fbDb.collection('users').doc(uid).set({
+    const premiumUpdate = {
       premium: true,
       premiumSince: new Date(),
       isPremium: true,
       premiumExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    }, { merge: true });
+    };
+    // Save Stripe customer ID for portal access
+    if (session.customer) {
+      premiumUpdate.stripeCustomerId = session.customer;
+    }
+    await fbDb.collection('users').doc(uid).set(premiumUpdate, { merge: true });
 
     console.log(`[Verify Checkout] Premium activated for uid: ${uid}`);
     res.json({ premium: true });
@@ -313,6 +323,38 @@ app.get('/premium/status', async (req, res) => {
   } catch (error) {
     console.error('[Premium Status] Error:', error.message);
     res.status(500).json({ error: 'Failed to check premium status' });
+  }
+});
+
+// ── Stripe Customer Portal ──
+app.post('/create-portal-session', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const idToken = authHeader.split('Bearer ')[1];
+    const decoded = await fbAdmin.auth().verifyIdToken(idToken);
+    const uid = decoded.uid;
+
+    // Look up stripeCustomerId from Firestore
+    const userSnap = await fbDb.collection('users').doc(uid).get();
+    if (!userSnap.exists || !userSnap.data().stripeCustomerId) {
+      return res.status(400).json({ error: 'No Stripe customer found. Please subscribe first.' });
+    }
+
+    const stripeCustomerId = userSnap.data().stripeCustomerId;
+
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      return_url: 'https://omedash.com',
+    });
+
+    res.json({ url: portalSession.url });
+  } catch (error) {
+    console.error('[Portal] Error:', error.message);
+    res.status(500).json({ error: 'Failed to create portal session' });
   }
 });
 
