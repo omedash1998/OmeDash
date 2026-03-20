@@ -1953,7 +1953,7 @@ if (settingsMenu) {
         }
         else if (action === 'membership') openMembershipModal();
         else if (action === 'contact') {
-            try { openContactModal(); } catch (e) { try { window.open('mailto:omedash.help@gmail.com'); } catch (e2) { alert('Contact: omedash.help@gmail.com'); } }
+            try { openContactModal(); } catch (e) { try { window.location.href = 'mailto:omedash.help@gmail.com'; } catch (e2) { alert('Contact: omedash.help@gmail.com'); } }
         }
         else if (action === 'tos') {
             try { openTosModal(); } catch (e) { try { window.open('/tos', '_blank'); } catch (e2) { alert('Open Terms of Service'); } }
@@ -2321,7 +2321,7 @@ function closeContactModal() {
 
 if (contactCloseBtn) contactCloseBtn.addEventListener('click', closeContactModal);
 if (contactMailBtn) contactMailBtn.addEventListener('click', () => {
-    try { window.open('mailto:omedash.help@gmail.com'); } catch (e) { alert('Contact: omedash.help@gmail.com'); }
+    try { window.location.href = 'mailto:omedash.help@gmail.com'; } catch (e) { alert('Contact: omedash.help@gmail.com'); }
 });
 if (contactModal) contactModal.addEventListener('click', (e) => { if (e.target === contactModal) closeContactModal(); });
 
