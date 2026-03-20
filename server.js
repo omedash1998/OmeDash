@@ -17,6 +17,9 @@ const io = new Server(server, {
     origin: ["https://omedash.com", "https://www.omedash.com"],
     methods: ["GET", "POST"],
     credentials: true
+  },
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000 // 2 minutes
   }
 });
 

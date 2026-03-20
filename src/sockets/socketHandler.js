@@ -22,7 +22,22 @@ module.exports = function (io) {
     }
 
     io.on("connection", (socket) => {
-        console.log("User connected", socket.id);
+        if (socket.recovered) {
+            console.log("Session recovered for socket", socket.id);
+            socket.uid = state.socketUids.get(socket.id);
+            state.disconnectTimeouts = state.disconnectTimeouts || new Map();
+            if (state.disconnectTimeouts.has(socket.id)) {
+                clearTimeout(state.disconnectTimeouts.get(socket.id));
+                state.disconnectTimeouts.delete(socket.id);
+            }
+            const partnerId = state.pairs[socket.id];
+            if (partnerId) {
+                const partnerSocket = io.sockets.sockets.get(partnerId);
+                if (partnerSocket) partnerSocket.emit("partner-reconnected");
+            }
+        } else {
+            console.log("User connected", socket.id);
+        }
 
         // deliver any pending direct messages for this socket
         try {
@@ -212,6 +227,11 @@ module.exports = function (io) {
         socket.on("ice-candidate", candidate => {
             const partnerId = state.pairs[socket.id];
             if (partnerId) io.to(partnerId).emit("ice-candidate", candidate);
+        });
+
+        socket.on("request-ice-restart", () => {
+            const partnerId = state.pairs[socket.id];
+            if (partnerId) io.to(partnerId).emit("request-ice-restart");
         });
 
         socket.on("chat", async (payload) => {
@@ -673,6 +693,7 @@ module.exports = function (io) {
         });
 
         socket.on("next", async () => {
+            socket.intentionalDisconnect = true;
             // Wait for any in-flight set-preferences write to finish first
             if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
             const partnerId = state.pairs[socket.id];
@@ -693,32 +714,76 @@ module.exports = function (io) {
             matchmaking.tryMatch();
         });
 
+        socket.on("intentional-disconnect", () => {
+            socket.intentionalDisconnect = true;
+            socket.disconnect(true);
+        });
+
         socket.on("disconnect", async () => {
-            console.log("DISCONNECT TRIGGERED",
-                "socketId:", socket.id,
-                "roomId:", state.socketRooms.get(socket.id) || 'none'
-            );
-            console.log("User disconnected", socket.id);
+            console.log("DISCONNECT TRIGGERED", socket.id, "roomId:", state.socketRooms.get(socket.id) || 'none', "intentional:", socket.intentionalDisconnect);
+            
+            // Instantly remove from queue so they aren't matched while offline
             matchmaking.leaveQueue(socket.id);
             if (state.paused.has(socket.id)) state.paused.delete(socket.id);
 
-            state.socketUids.delete(socket.id);
-            state.reportCooldowns.delete(socket.id);
+            if (socket.intentionalDisconnect) {
+                console.log("Intentional disconnect for", socket.id, "— bypassing grace period");
+                state.socketUids.delete(socket.id);
+                state.reportCooldowns.delete(socket.id);
 
-            await endFirestoreRoom(socket.id);
+                await endFirestoreRoom(socket.id);
 
+                const finalPartnerId = state.pairs[socket.id];
+                if (finalPartnerId) {
+                    state.socketRooms.delete(finalPartnerId);
+                    delete state.pairs[finalPartnerId];
+                    delete state.pairs[socket.id];
+                    const partnerSocket = io.sockets.sockets.get(finalPartnerId);
+                    if (partnerSocket) {
+                        partnerSocket.emit("partner-left", { reason: "disconnect" });
+                        if (!state.paused.has(finalPartnerId) && !state.waiting.includes(finalPartnerId)) {
+                            state.waiting.push(finalPartnerId);
+                        }
+                    }
+                }
+                matchmaking.tryMatch();
+                return;
+            }
+
+            // Notify partner immediately to show spinner
             const partnerId = state.pairs[socket.id];
             if (partnerId) {
-                state.socketRooms.delete(partnerId);
-                delete state.pairs[partnerId];
-                delete state.pairs[socket.id];
                 const partnerSocket = io.sockets.sockets.get(partnerId);
-                if (partnerSocket) {
-                    partnerSocket.emit("partner-left", { reason: "disconnect" });
-                    if (!state.paused.has(partnerId) && !state.waiting.includes(partnerId)) state.waiting.push(partnerId);
-                }
+                if (partnerSocket) partnerSocket.emit("partner-reconnecting");
             }
-            matchmaking.tryMatch();
+
+            // Grace period of 7 seconds before permanent cleanup
+            state.disconnectTimeouts = state.disconnectTimeouts || new Map();
+            const timeoutId = setTimeout(async () => {
+                console.log("Grace period ended for", socket.id, "— permanently cleaning up");
+                state.disconnectTimeouts.delete(socket.id);
+                state.socketUids.delete(socket.id);
+                state.reportCooldowns.delete(socket.id);
+
+                await endFirestoreRoom(socket.id);
+
+                const finalPartnerId = state.pairs[socket.id];
+                if (finalPartnerId) {
+                    state.socketRooms.delete(finalPartnerId);
+                    delete state.pairs[finalPartnerId];
+                    delete state.pairs[socket.id];
+                    const partnerSocket = io.sockets.sockets.get(finalPartnerId);
+                    if (partnerSocket) {
+                        partnerSocket.emit("partner-left", { reason: "disconnect" });
+                        if (!state.paused.has(finalPartnerId) && !state.waiting.includes(finalPartnerId)) {
+                            state.waiting.push(finalPartnerId);
+                        }
+                    }
+                }
+                matchmaking.tryMatch();
+            }, 7000);
+
+            state.disconnectTimeouts.set(socket.id, timeoutId);
         });
     });
 };

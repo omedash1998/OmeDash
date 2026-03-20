@@ -203,6 +203,16 @@ function createPeerConnection() {
         if (e.candidate) socket.emit("ice-candidate", e.candidate);
     };
 
+    newPc.oniceconnectionstatechange = () => {
+        log("ICE State: " + newPc.iceConnectionState);
+        if (newPc.iceConnectionState === "disconnected" || newPc.iceConnectionState === "failed") {
+            log("WebRTC drop! Requesting ICE restart if socket is connected...");
+            if (typeof socket !== "undefined" && socket && socket.connected) {
+                socket.emit("request-ice-restart");
+            }
+        }
+    };
+
     newPc.ontrack = e => {
         remoteVideo.srcObject = e.streams[0];
         log("remote track set");
@@ -500,6 +510,38 @@ function attachSocketHandlers() {
         if (pc) {
             try { await pc.addIceCandidate(candidate); }
             catch (e) { console.error(e); }
+        }
+    });
+
+    socket.on("partner-reconnecting", () => {
+        let overlay = document.getElementById("partnerReconnectOverlay");
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.id = "partnerReconnectOverlay";
+            overlay.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);color:white;display:flex;align-items:center;justify-content:center;z-index:99;flex-direction:column;font-weight:600;font-family:system-ui;text-align:center;";
+            overlay.innerHTML = "<div class='partner-spinner' style='display:block;position:relative;margin-bottom:12px;width:30px;height:30px;border-width:3px;'></div><div style='font-size:14px'>Partner reconnecting...</div>";
+            if (remoteVideo && remoteVideo.parentElement) {
+                remoteVideo.parentElement.style.position = "relative";
+                remoteVideo.parentElement.appendChild(overlay);
+            }
+        }
+    });
+
+    socket.on("partner-reconnected", () => {
+        const overlay = document.getElementById("partnerReconnectOverlay");
+        if (overlay) overlay.remove();
+    });
+
+    socket.on("request-ice-restart", async () => {
+        log("Partner requested ICE restart. Creating new offer with iceRestart: true...");
+        if (pc) {
+            try {
+                const offer = await pc.createOffer({ iceRestart: true });
+                await pc.setLocalDescription(offer);
+                socket.emit("offer", offer);
+            } catch (e) {
+                console.error("ICE restart failed", e);
+            }
         }
     });
 
@@ -2229,6 +2271,14 @@ startBtn.addEventListener("click", async () => {
     socket = io("https://app.omedash.com");
 
     socket.on("connect", async () => {
+        const overlay = document.getElementById("selfReconnectOverlay");
+        if (overlay) overlay.remove();
+
+        if (socket.recovered && currentPartner) {
+            log("Session successfully recovered! Requesting ICE Restart...");
+            socket.emit("request-ice-restart");
+        }
+
         attachSocketHandlers();
         // Register Firebase UID with server for ban check + report tracking
         try {
@@ -2471,3 +2521,5 @@ window._suppressMembershipPopup = window._suppressMembershipPopup || false;
 document.addEventListener('DOMContentLoaded', () => {
     try { startLocalStream(); } catch (e) { console.warn('startLocalStream failed on load', e); }
 }, { passive: true });
+
+window.addEventListener("beforeunload", () => { if (typeof socket !== "undefined" && socket && socket.connected) socket.emit("intentional-disconnect"); });
