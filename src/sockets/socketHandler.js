@@ -65,32 +65,39 @@ module.exports = function (io) {
                             clearTimeout(timeoutId);
                             state.disconnectTimeouts.delete(oldSocketId);
                             
-                            if (state.socketUids.has(oldSocketId)) {
-                                const uid = state.socketUids.get(oldSocketId);
-                                state.socketUids.set(socket.id, uid);
-                                socket.uid = uid;
-                            }
-                            
-                            const roomId = state.socketRooms.get(oldSocketId);
-                            if (roomId) {
-                                state.socketRooms.set(socket.id, roomId);
-                                state.socketRooms.delete(oldSocketId);
-                            }
-                            
-                            const partnerId = state.pairs[oldSocketId];
-                            if (partnerId) {
-                                state.pairs[socket.id] = partnerId;
-                                state.pairs[partnerId] = socket.id;
-                                delete state.pairs[oldSocketId];
+                            if (oldSocketId !== socket.id) {
+                                if (state.socketUids.has(oldSocketId)) {
+                                    const uid = state.socketUids.get(oldSocketId);
+                                    state.socketUids.set(socket.id, uid);
+                                    socket.uid = uid;
+                                }
                                 
-                                const partnerSocket = io.sockets.sockets.get(partnerId);
+                                const roomId = state.socketRooms.get(oldSocketId);
+                                if (roomId) {
+                                    state.socketRooms.set(socket.id, roomId);
+                                    state.socketRooms.delete(oldSocketId);
+                                }
+                                
+                                const partnerId = state.pairs[oldSocketId];
+                                if (partnerId) {
+                                    state.pairs[socket.id] = partnerId;
+                                    state.pairs[partnerId] = socket.id;
+                                    delete state.pairs[oldSocketId];
+                                }
+                                
+                                state.sessionIds.delete(oldSocketId);
+                            }
+                            
+                            // Whether native or manual recovery, tell partner we're back and force ICE restart
+                            const currentPartnerId = state.pairs[socket.id];
+                            if (currentPartnerId) {
+                                const partnerSocket = io.sockets.sockets.get(currentPartnerId);
                                 if (partnerSocket) {
                                     partnerSocket.emit("partner-reconnected");
                                     partnerSocket.emit("request-ice-restart");
                                 }
                             }
                             
-                            state.sessionIds.delete(oldSocketId);
                             break;
                         }
                     }
