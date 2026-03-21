@@ -159,6 +159,27 @@ let isPaused = false;
 // map of partner socket id -> profile { pic, about, name, from }
 const partnerProfiles = {};
 
+let reconnectTimeout = null;
+
+function showPartnerReconnectingOverlay() {
+    let overlay = document.getElementById("partnerReconnectOverlay");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "partnerReconnectOverlay";
+        overlay.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);color:white;display:flex;align-items:center;justify-content:center;z-index:99;flex-direction:column;font-weight:600;font-family:system-ui;text-align:center;";
+        overlay.innerHTML = "<div class='partner-spinner' style='display:block;position:relative;margin-bottom:12px;width:30px;height:30px;border-width:3px;'></div><div style='font-size:14px'>Partner reconnecting...</div>";
+        if (typeof remoteVideo !== 'undefined' && remoteVideo && remoteVideo.parentElement) {
+            remoteVideo.parentElement.style.position = "relative";
+            remoteVideo.parentElement.appendChild(overlay);
+        }
+    }
+}
+
+function hidePartnerReconnectingOverlay() {
+    const overlay = document.getElementById("partnerReconnectOverlay");
+    if (overlay) overlay.remove();
+}
+
 function openConfirmDeleteModal(title, message, action) {
     try {
         if (confirmDeleteTitle) confirmDeleteTitle.textContent = title || 'Confirm';
@@ -238,16 +259,25 @@ function createPeerConnection() {
     };
 
     newPc.oniceconnectionstatechange = () => {
-        log("ICE State: " + newPc.iceConnectionState);
-        if (newPc.iceConnectionState === "disconnected" || newPc.iceConnectionState === "failed") {
+        const state = newPc.iceConnectionState;
+        log("ICE State: " + state);
+
+        if (state === "disconnected" || state === "failed") {
             log("WebRTC drop! Requesting ICE restart if socket is connected...");
+            
+            reconnectTimeout = setTimeout(() => {
+                showPartnerReconnectingOverlay();
+            }, 3000);
+
             if (typeof socket !== "undefined" && socket && socket.connected) {
                 socket.emit("request-ice-restart");
             }
-        } else if (newPc.iceConnectionState === "connected" || newPc.iceConnectionState === "completed") {
-            // Bulletproof fallback: if WebRTC heals natively, force hide all overlays
-            const pOverlay = document.getElementById("partnerReconnectOverlay");
-            if (pOverlay) pOverlay.remove();
+        } else if (state === "connected" || state === "completed") {
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            hidePartnerReconnectingOverlay();
             const sOverlay = document.getElementById("selfReconnectOverlay");
             if (sOverlay) sOverlay.remove();
         }
@@ -577,22 +607,11 @@ function attachSocketHandlers() {
     });
 
     socket.on("partner-reconnecting", () => {
-        let overlay = document.getElementById("partnerReconnectOverlay");
-        if (!overlay) {
-            overlay = document.createElement("div");
-            overlay.id = "partnerReconnectOverlay";
-            overlay.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);color:white;display:flex;align-items:center;justify-content:center;z-index:99;flex-direction:column;font-weight:600;font-family:system-ui;text-align:center;";
-            overlay.innerHTML = "<div class='partner-spinner' style='display:block;position:relative;margin-bottom:12px;width:30px;height:30px;border-width:3px;'></div><div style='font-size:14px'>Partner reconnecting...</div>";
-            if (remoteVideo && remoteVideo.parentElement) {
-                remoteVideo.parentElement.style.position = "relative";
-                remoteVideo.parentElement.appendChild(overlay);
-            }
-        }
+        showPartnerReconnectingOverlay();
     });
 
     socket.on("partner-reconnected", () => {
-        const overlay = document.getElementById("partnerReconnectOverlay");
-        if (overlay) overlay.remove();
+        hidePartnerReconnectingOverlay();
     });
 
     socket.on("request-ice-restart", async () => {
@@ -977,6 +996,11 @@ function attachSocketHandlers() {
 }
 
 function cleanupAfterPartnerLeft() {
+    if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+    }
+    hidePartnerReconnectingOverlay();
     try { if (pc) pc.close(); } catch (e) { }
     pc = null;
     currentPartner = null;
@@ -2605,7 +2629,7 @@ startBtn.addEventListener("click", async () => {
                 socket.emit("request-ice-restart");
             }
             if (pc && pc.restartIce) {
-                try { pc.restartIce(); } catch(e) {}
+                try { pc.restartIce(); } catch (e) { }
             }
         }
     });
