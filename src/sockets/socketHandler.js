@@ -50,6 +50,54 @@ module.exports = function (io) {
             }
         } catch (e) { console.error('deliver pending failed', e); }
 
+        // ── Manual Session Recovery (when socket.recovered fails) ──
+        socket.on('restore-session', (payload) => {
+            try {
+                const sid = payload && payload.sessionId;
+                if (!sid) return;
+                
+                state.sessionIds.set(socket.id, sid);
+                
+                if (state.disconnectTimeouts) {
+                    for (const [oldSocketId, timeoutId] of state.disconnectTimeouts.entries()) {
+                        if (state.sessionIds.get(oldSocketId) === sid) {
+                            console.log(`Manual Session Recovery: mapping old ${oldSocketId} -> new ${socket.id}`);
+                            clearTimeout(timeoutId);
+                            state.disconnectTimeouts.delete(oldSocketId);
+                            
+                            if (state.socketUids.has(oldSocketId)) {
+                                const uid = state.socketUids.get(oldSocketId);
+                                state.socketUids.set(socket.id, uid);
+                                socket.uid = uid;
+                            }
+                            
+                            const roomId = state.socketRooms.get(oldSocketId);
+                            if (roomId) {
+                                state.socketRooms.set(socket.id, roomId);
+                                state.socketRooms.delete(oldSocketId);
+                            }
+                            
+                            const partnerId = state.pairs[oldSocketId];
+                            if (partnerId) {
+                                state.pairs[socket.id] = partnerId;
+                                state.pairs[partnerId] = socket.id;
+                                delete state.pairs[oldSocketId];
+                                
+                                const partnerSocket = io.sockets.sockets.get(partnerId);
+                                if (partnerSocket) {
+                                    partnerSocket.emit("partner-reconnected");
+                                    partnerSocket.emit("request-ice-restart");
+                                }
+                            }
+                            
+                            state.sessionIds.delete(oldSocketId);
+                            break;
+                        }
+                    }
+                }
+            } catch (e) { console.error('restore-session error', e); }
+        });
+
         // ── Register: client sends Firebase UID so server can map socket → user ──
         socket.on('register', async (payload) => {
             try {
@@ -764,6 +812,7 @@ module.exports = function (io) {
                 state.disconnectTimeouts.delete(socket.id);
                 state.socketUids.delete(socket.id);
                 state.reportCooldowns.delete(socket.id);
+                state.sessionIds.delete(socket.id);
 
                 await endFirestoreRoom(socket.id);
 

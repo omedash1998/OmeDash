@@ -7,6 +7,7 @@ const pendingMessages = new Map(); // targetId -> [{ from, text, when }]
 const reportCooldowns = new Map();  // reporterSocketId → last report timestamp(ms)
 const roomReports = new Map();      // roomId → Set of reporterSocketIds (dedup per room)
 const socketUids = new Map();       // socketId → Firebase UID mapping (set on 'register' event)
+const sessionIds = new Map();       // socketId → unique browser sessionId mapping
 const endingRooms = new Set();      // In-memory guard for double ending rooms
 
 module.exports = {
@@ -18,5 +19,6 @@ module.exports = {
     reportCooldowns,
     roomReports,
     socketUids,
+    sessionIds,
     endingRooms
 };

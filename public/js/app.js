@@ -244,6 +244,12 @@ function createPeerConnection() {
             if (typeof socket !== "undefined" && socket && socket.connected) {
                 socket.emit("request-ice-restart");
             }
+        } else if (newPc.iceConnectionState === "connected" || newPc.iceConnectionState === "completed") {
+            // Bulletproof fallback: if WebRTC heals natively, force hide all overlays
+            const pOverlay = document.getElementById("partnerReconnectOverlay");
+            if (pOverlay) pOverlay.remove();
+            const sOverlay = document.getElementById("selfReconnectOverlay");
+            if (sOverlay) sOverlay.remove();
         }
     };
 
@@ -2543,12 +2549,22 @@ startBtn.addEventListener("click", async () => {
         const overlay = document.getElementById("selfReconnectOverlay");
         if (overlay) overlay.remove();
 
+        // 100% reliable session recovery ID
+        let sessionId = localStorage.getItem("omedash_session_id");
+        if (!sessionId) {
+            sessionId = Math.random().toString(36).substring(2, 15);
+            localStorage.setItem("omedash_session_id", sessionId);
+        }
+
         if (socket.recovered && currentPartner) {
-            log("Session successfully recovered! Requesting ICE Restart...");
+            log("Session successfully recovered natively! Requesting ICE Restart...");
             socket.emit("request-ice-restart");
         }
 
         attachSocketHandlers();
+        // Emitting session ID allows the server to manually map a new socket.id to your old call if native recovery failed
+        socket.emit("restore-session", { sessionId });
+
         // Register Firebase UID with server for ban check + report tracking
         try {
             const uid = window._firebaseUid;
