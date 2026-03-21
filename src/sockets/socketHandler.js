@@ -58,48 +58,64 @@ module.exports = function (io) {
                 
                 state.sessionIds.set(socket.id, sid);
                 
-                if (state.disconnectTimeouts) {
-                    for (const [oldSocketId, timeoutId] of state.disconnectTimeouts.entries()) {
-                        if (state.sessionIds.get(oldSocketId) === sid) {
-                            console.log(`Manual Session Recovery: mapping old ${oldSocketId} -> new ${socket.id}`);
-                            clearTimeout(timeoutId);
+                let foundMatch = false;
+                for (const [oldSocketId, mappedSid] of state.sessionIds.entries()) {
+                    if (oldSocketId !== socket.id && mappedSid === sid) {
+                        console.log(`Manual Session Recovery: mapping old ghost ${oldSocketId} -> new ${socket.id}`);
+                        
+                        // Clear timeout if it WAS officially disconnected
+                        if (state.disconnectTimeouts && state.disconnectTimeouts.has(oldSocketId)) {
+                            clearTimeout(state.disconnectTimeouts.get(oldSocketId));
                             state.disconnectTimeouts.delete(oldSocketId);
-                            
-                            if (oldSocketId !== socket.id) {
-                                if (state.socketUids.has(oldSocketId)) {
-                                    const uid = state.socketUids.get(oldSocketId);
-                                    state.socketUids.set(socket.id, uid);
-                                    socket.uid = uid;
-                                }
-                                
-                                const roomId = state.socketRooms.get(oldSocketId);
-                                if (roomId) {
-                                    state.socketRooms.set(socket.id, roomId);
-                                    state.socketRooms.delete(oldSocketId);
-                                }
-                                
-                                const partnerId = state.pairs[oldSocketId];
-                                if (partnerId) {
-                                    state.pairs[socket.id] = partnerId;
-                                    state.pairs[partnerId] = socket.id;
-                                    delete state.pairs[oldSocketId];
-                                }
-                                
-                                state.sessionIds.delete(oldSocketId);
+                        } else {
+                            // It hasn't disconnected yet! The old TCP socket is a ghost! We must kill it!
+                            const ghostSocket = io.sockets.sockets.get(oldSocketId);
+                            if (ghostSocket) {
+                                ghostSocket.intentionalDisconnect = true; // prevent grace period triggers
+                                ghostSocket.disconnect(true);
                             }
-                            
-                            // Whether native or manual recovery, tell partner we're back and force ICE restart
-                            const currentPartnerId = state.pairs[socket.id];
-                            if (currentPartnerId) {
-                                const partnerSocket = io.sockets.sockets.get(currentPartnerId);
-                                if (partnerSocket) {
-                                    partnerSocket.emit("partner-reconnected");
-                                    partnerSocket.emit("request-ice-restart");
-                                }
-                            }
-                            
-                            break;
                         }
+
+                        if (state.socketUids.has(oldSocketId)) {
+                            const uid = state.socketUids.get(oldSocketId);
+                            state.socketUids.set(socket.id, uid);
+                            socket.uid = uid;
+                        }
+                        
+                        const roomId = state.socketRooms.get(oldSocketId);
+                        if (roomId) {
+                            state.socketRooms.set(socket.id, roomId);
+                            state.socketRooms.delete(oldSocketId);
+                        }
+                        
+                        const partnerId = state.pairs[oldSocketId];
+                        if (partnerId) {
+                            state.pairs[socket.id] = partnerId;
+                            state.pairs[partnerId] = socket.id;
+                            delete state.pairs[oldSocketId];
+                        }
+                        
+                        state.sessionIds.delete(oldSocketId);
+                        foundMatch = true;
+                        break;
+                    }
+                }
+
+                // If native recovery happened perfectly, "foundMatch" is false but we still need to clear its own timeout
+                if (!foundMatch && socket.recovered) {
+                    if (state.disconnectTimeouts && state.disconnectTimeouts.has(socket.id)) {
+                        clearTimeout(state.disconnectTimeouts.get(socket.id));
+                        state.disconnectTimeouts.delete(socket.id);
+                    }
+                }
+                
+                // Whether native or manual recovery, tell partner we're back and force ICE restart
+                const currentPartnerId = state.pairs[socket.id];
+                if (currentPartnerId) {
+                    const partnerSocket = io.sockets.sockets.get(currentPartnerId);
+                    if (partnerSocket) {
+                        partnerSocket.emit("partner-reconnected");
+                        partnerSocket.emit("request-ice-restart");
                     }
                 }
             } catch (e) { console.error('restore-session error', e); }
