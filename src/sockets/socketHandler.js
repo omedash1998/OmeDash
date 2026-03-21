@@ -55,16 +55,16 @@ module.exports = function (io) {
             try {
                 const sid = payload && payload.sessionId;
                 if (!sid) return;
-                
+
                 state.sessionIds.set(socket.id, sid);
-                
+
                 let foundMatch = false;
                 for (const [oldSocketId, mappedSid] of state.sessionIds.entries()) {
                     if (oldSocketId !== socket.id && mappedSid === sid) {
                         console.log(`Manual Session Recovery: mapping old ghost ${oldSocketId} -> new ${socket.id}`);
-                        
+
                         let ghostSocketToDisconnect = null;
-                        
+
                         // Clear timeout if it WAS officially disconnected
                         if (state.disconnectTimeouts && state.disconnectTimeouts.has(oldSocketId)) {
                             clearTimeout(state.disconnectTimeouts.get(oldSocketId));
@@ -80,13 +80,13 @@ module.exports = function (io) {
                             state.socketUids.delete(oldSocketId);
                             socket.uid = uid;
                         }
-                        
+
                         const roomId = state.socketRooms.get(oldSocketId);
                         if (roomId) {
                             state.socketRooms.set(socket.id, roomId);
                             state.socketRooms.delete(oldSocketId);
                         }
-                        
+
                         const partnerId = state.pairs[oldSocketId];
                         if (partnerId) {
                             state.pairs[socket.id] = partnerId;
@@ -104,7 +104,7 @@ module.exports = function (io) {
                             state.paused.delete(oldSocketId);
                             state.paused.add(socket.id);
                         }
-                        
+
                         state.sessionIds.delete(oldSocketId);
 
                         // NOW disconnect the ghost socket since all state tracking is securely cleared
@@ -125,7 +125,7 @@ module.exports = function (io) {
                         state.disconnectTimeouts.delete(socket.id);
                     }
                 }
-                
+
                 // Whether native or manual recovery, tell partner we're back and force ICE restart
                 const currentPartnerId = state.pairs[socket.id];
                 if (currentPartnerId) {
@@ -809,7 +809,7 @@ module.exports = function (io) {
 
         socket.on("disconnect", async () => {
             console.log("DISCONNECT TRIGGERED", socket.id, "roomId:", state.socketRooms.get(socket.id) || 'none', "intentional:", socket.intentionalDisconnect);
-            
+
             // Instantly remove from queue so they aren't matched while offline
             matchmaking.leaveQueue(socket.id);
             if (state.paused.has(socket.id)) state.paused.delete(socket.id);

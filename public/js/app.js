@@ -264,7 +264,7 @@ function createPeerConnection() {
 
         if (state === "disconnected" || state === "failed") {
             log("WebRTC drop! Requesting ICE restart if socket is connected...");
-            
+
             reconnectTimeout = setTimeout(() => {
                 showPartnerReconnectingOverlay();
             }, 3000);

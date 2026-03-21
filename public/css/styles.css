@@ -2218,7 +2218,7 @@ body {
         justify-content: flex-end;
         overflow-y: auto;
         padding: 8px 12px;
-        pointer-events: none;
+        pointer-events: auto;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
     }
