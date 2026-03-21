@@ -2584,20 +2584,30 @@ startBtn.addEventListener("click", async () => {
             } catch (e) { /* ignore */ }
         });
 
-        await startLocalStream();
-        nextBtn.style.display = "block";
-        pauseBtn.style.display = "block";
-        stText.textContent = "Searching for match...";
-        try {
-            if (chatStatus) { chatStatus.style.display = 'block'; chatStatus.textContent = 'Searching partner...'; }
-            updateMobileStatusBadge('Searching partner...', true);
-            if (chatStatusFlag) chatStatusFlag.textContent = '';
-            try { const spinner = document.getElementById('partnerSpinner'); if (spinner) { spinner.style.top = 'calc(50% - 10px)'; spinner.style.display = 'block'; } } catch (e) { }
-            try { showStarfield(); } catch (e) { }
-            try { const small = document.getElementById('partnerLogoSmall'); if (small) small.style.opacity = '0.9'; } catch (e) { }
-        } catch (e) { }
-        socket.emit("set-preferences", getPreferences());
-        socket.emit("ready");
+        if (!currentPartner) {
+            await startLocalStream();
+            nextBtn.style.display = "block";
+            pauseBtn.style.display = "block";
+            stText.textContent = "Searching for match...";
+            try {
+                if (chatStatus) { chatStatus.style.display = 'block'; chatStatus.textContent = 'Searching partner...'; }
+                updateMobileStatusBadge('Searching partner...', true);
+                if (chatStatusFlag) chatStatusFlag.textContent = '';
+                try { const spinner = document.getElementById('partnerSpinner'); if (spinner) { spinner.style.top = 'calc(50% - 10px)'; spinner.style.display = 'block'; } } catch (e) { }
+                try { showStarfield(); } catch (e) { }
+                try { const small = document.getElementById('partnerLogoSmall'); if (small) small.style.opacity = '0.9'; } catch (e) { }
+            } catch (e) { }
+            socket.emit("set-preferences", getPreferences());
+            socket.emit("ready");
+        } else {
+            console.log("Reconnected while in active call → forcing recovery");
+            if (socket && socket.connected) {
+                socket.emit("request-ice-restart");
+            }
+            if (pc && pc.restartIce) {
+                try { pc.restartIce(); } catch(e) {}
+            }
+        }
     });
 });
 
