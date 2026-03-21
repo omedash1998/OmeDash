@@ -63,22 +63,21 @@ module.exports = function (io) {
                     if (oldSocketId !== socket.id && mappedSid === sid) {
                         console.log(`Manual Session Recovery: mapping old ghost ${oldSocketId} -> new ${socket.id}`);
                         
+                        let ghostSocketToDisconnect = null;
+                        
                         // Clear timeout if it WAS officially disconnected
                         if (state.disconnectTimeouts && state.disconnectTimeouts.has(oldSocketId)) {
                             clearTimeout(state.disconnectTimeouts.get(oldSocketId));
                             state.disconnectTimeouts.delete(oldSocketId);
                         } else {
                             // It hasn't disconnected yet! The old TCP socket is a ghost! We must kill it!
-                            const ghostSocket = io.sockets.sockets.get(oldSocketId);
-                            if (ghostSocket) {
-                                ghostSocket.intentionalDisconnect = true; // prevent grace period triggers
-                                ghostSocket.disconnect(true);
-                            }
+                            ghostSocketToDisconnect = io.sockets.sockets.get(oldSocketId);
                         }
 
                         if (state.socketUids.has(oldSocketId)) {
                             const uid = state.socketUids.get(oldSocketId);
                             state.socketUids.set(socket.id, uid);
+                            state.socketUids.delete(oldSocketId);
                             socket.uid = uid;
                         }
                         
@@ -94,8 +93,26 @@ module.exports = function (io) {
                             state.pairs[partnerId] = socket.id;
                             delete state.pairs[oldSocketId];
                         }
+
+                        const waitingIndex = state.waiting.indexOf(oldSocketId);
+                        if (waitingIndex > -1) {
+                            state.waiting.splice(waitingIndex, 1);
+                            state.waiting.push(socket.id);
+                        }
+
+                        if (state.paused.has(oldSocketId)) {
+                            state.paused.delete(oldSocketId);
+                            state.paused.add(socket.id);
+                        }
                         
                         state.sessionIds.delete(oldSocketId);
+
+                        // NOW disconnect the ghost socket since all state tracking is securely cleared
+                        if (ghostSocketToDisconnect) {
+                            ghostSocketToDisconnect.intentionalDisconnect = true; // prevent grace period triggers
+                            ghostSocketToDisconnect.disconnect(true);
+                        }
+
                         foundMatch = true;
                         break;
                     }
