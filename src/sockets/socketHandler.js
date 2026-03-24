@@ -269,6 +269,11 @@ module.exports = function (io) {
         });
 
         socket.on("ready", async () => {
+            // Block if already paired — prevents double-matching on reconnect
+            if (state.pairs[socket.id]) {
+                console.log('ready: blocked already-paired socket:', socket.id);
+                return;
+            }
             // Wait for any in-flight set-preferences write to finish first
             if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
             matchmaking.joinQueue(socket.id);
@@ -820,6 +825,7 @@ module.exports = function (io) {
                 state.reportCooldowns.delete(socket.id);
 
                 await endFirestoreRoom(socket.id);
+                state.socketRooms.delete(socket.id);
 
                 const finalPartnerId = state.pairs[socket.id];
                 if (finalPartnerId) {
@@ -829,7 +835,7 @@ module.exports = function (io) {
                     const partnerSocket = io.sockets.sockets.get(finalPartnerId);
                     if (partnerSocket) {
                         partnerSocket.emit("partner-left", { reason: "disconnect" });
-                        if (!state.paused.has(finalPartnerId) && !state.waiting.includes(finalPartnerId)) {
+                        if (!state.paused.has(finalPartnerId) && !state.waiting.includes(finalPartnerId) && io.sockets.sockets.has(finalPartnerId)) {
                             state.waiting.push(finalPartnerId);
                         }
                     }
@@ -855,6 +861,7 @@ module.exports = function (io) {
                 state.sessionIds.delete(socket.id);
 
                 await endFirestoreRoom(socket.id);
+                state.socketRooms.delete(socket.id);
 
                 const finalPartnerId = state.pairs[socket.id];
                 if (finalPartnerId) {
@@ -864,7 +871,7 @@ module.exports = function (io) {
                     const partnerSocket = io.sockets.sockets.get(finalPartnerId);
                     if (partnerSocket) {
                         partnerSocket.emit("partner-left", { reason: "disconnect" });
-                        if (!state.paused.has(finalPartnerId) && !state.waiting.includes(finalPartnerId)) {
+                        if (!state.paused.has(finalPartnerId) && !state.waiting.includes(finalPartnerId) && io.sockets.sockets.has(finalPartnerId)) {
                             state.waiting.push(finalPartnerId);
                         }
                     }

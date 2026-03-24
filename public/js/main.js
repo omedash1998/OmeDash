@@ -468,6 +468,10 @@ async function startAs(roleAssigned) {
 }
 
 function attachSocketHandlers() {
+    // Guard: prevent duplicate handler registration on Socket.IO reconnects
+    if (socket._handlersAttached) return;
+    socket._handlersAttached = true;
+
     socket.on("matched", async ({ role: r, partner, partnerUid: pUid, roomId: matchedRoomId }) => {
         log("matched:", r, partner);
         currentPartner = partner;

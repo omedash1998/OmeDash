@@ -111,11 +111,23 @@ async function areGenderCompatible(aUid, bUid) {
 async function tryMatch() {
     const { waiting, paused, pairs, socketRooms, socketUids } = state;
 
+    // Prune dead sockets from queue (safety net for stale entries)
+    for (let i = waiting.length - 1; i >= 0; i--) {
+        if (!io || !io.sockets.sockets.has(waiting[i])) {
+            console.log('tryMatch: pruning dead socket from queue:', waiting[i]);
+            waiting.splice(i, 1);
+        }
+    }
+
     while (waiting.length >= 2) {
         const aId = waiting.shift();
-        // skip if paused or disconnected
+        // skip if paused, disconnected, or already paired
         try {
             if (paused.has(aId)) continue;
+            if (pairs[aId]) {
+                console.log('tryMatch: skipping already-paired socket:', aId);
+                continue;
+            }
         } catch (e) { /* ignore */ }
 
         // Find a compatible partner from the queue
@@ -182,6 +194,12 @@ async function tryMatch() {
 
         try {
             if (paused.has(bId)) { waiting.unshift(aId); continue; }
+            // Skip if B is already paired (safety net)
+            if (pairs[bId]) {
+                console.log('tryMatch: skipping already-paired candidate B:', bId);
+                waiting.unshift(aId);
+                continue;
+            }
         } catch (e) { /* ignore */ }
 
         // guard in case socket disconnected while waiting
@@ -281,6 +299,11 @@ async function tryMatch() {
 
 function joinQueue(socketId) {
     if (state.paused.has(socketId)) return;
+    // Never queue a socket that is already paired — prevents double-matching
+    if (state.pairs[socketId]) {
+        console.log('joinQueue: blocked already-paired socket:', socketId);
+        return;
+    }
     if (!state.waiting.includes(socketId)) {
         state.waiting.push(socketId);
         module.exports.tryMatch();
