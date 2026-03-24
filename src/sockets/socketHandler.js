@@ -147,53 +147,6 @@ module.exports = function (io) {
                 socket.uid = uid;
                 console.log('Registered socket', socket.id, '→ uid', uid);
 
-                // ── Evict any OLD sockets that share this UID ──
-                // When a user refreshes or reconnects, they get a new socket ID.
-                // The old socket may still be in pairs/queue, causing double-matching.
-                for (const [oldSid, oldUid] of state.socketUids.entries()) {
-                    if (oldUid === uid && oldSid !== socket.id) {
-                        console.log('register: evicting stale socket', oldSid, 'for uid', uid);
-
-                        // Cancel any pending grace-period timeout
-                        if (state.disconnectTimeouts && state.disconnectTimeouts.has(oldSid)) {
-                            clearTimeout(state.disconnectTimeouts.get(oldSid));
-                            state.disconnectTimeouts.delete(oldSid);
-                        }
-
-                        // Clean up the old socket's active pair
-                        const oldPartnerId = state.pairs[oldSid];
-                        if (oldPartnerId) {
-                            await endFirestoreRoom(oldSid);
-                            state.socketRooms.delete(oldSid);
-                            state.socketRooms.delete(oldPartnerId);
-                            delete state.pairs[oldPartnerId];
-                            delete state.pairs[oldSid];
-                            const oldPartnerSocket = io.sockets.sockets.get(oldPartnerId);
-                            if (oldPartnerSocket) {
-                                oldPartnerSocket.emit("partner-left", { reason: "disconnect" });
-                                if (!state.paused.has(oldPartnerId) && !state.waiting.includes(oldPartnerId) && io.sockets.sockets.has(oldPartnerId)) {
-                                    state.waiting.push(oldPartnerId);
-                                }
-                            }
-                        }
-
-                        // Remove from queue and all state maps
-                        matchmaking.leaveQueue(oldSid);
-                        state.socketUids.delete(oldSid);
-                        state.reportCooldowns.delete(oldSid);
-                        state.sessionIds.delete(oldSid);
-                        state.socketRooms.delete(oldSid);
-                        if (state.paused.has(oldSid)) state.paused.delete(oldSid);
-
-                        // Forcefully disconnect the ghost socket
-                        const oldSocket = io.sockets.sockets.get(oldSid);
-                        if (oldSocket) {
-                            oldSocket.intentionalDisconnect = true;
-                            oldSocket.disconnect(true);
-                        }
-                    }
-                }
-
                 // Check Firestore ban status
                 const userRef = fireDb.collection('users').doc(uid);
                 const userSnap = await userRef.get();
