@@ -304,6 +304,16 @@ function joinQueue(socketId) {
         console.log('joinQueue: blocked already-paired socket:', socketId);
         return;
     }
+    // UID-level guard: if another socket with the same UID is already paired, block
+    const uid = state.socketUids.get(socketId);
+    if (uid) {
+        for (const [sid, sUid] of state.socketUids.entries()) {
+            if (sUid === uid && sid !== socketId && state.pairs[sid]) {
+                console.log('joinQueue: blocked — another socket', sid, 'with same uid', uid, 'is already paired');
+                return;
+            }
+        }
+    }
     if (!state.waiting.includes(socketId)) {
         state.waiting.push(socketId);
         module.exports.tryMatch();
