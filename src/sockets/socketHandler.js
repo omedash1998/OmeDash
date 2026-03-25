@@ -804,12 +804,19 @@ module.exports = function (io) {
         });
 
         socket.on("next", async () => {
-            socket.intentionalDisconnect = true;
+            // NOTE: do NOT set socket.intentionalDisconnect here — "next" does NOT
+            // disconnect the socket. Setting that flag caused the disconnect handler
+            // to fire a second cleanup+re-queue on the partner whenever a brief
+            // network hiccup occurred, creating the connect/disconnect loop.
+
             // Wait for any in-flight set-preferences write to finish first
             if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
+
             const partnerId = state.pairs[socket.id];
             if (partnerId) {
                 await endFirestoreRoom(socket.id);
+                // Clean up both sides' room tracking
+                state.socketRooms.delete(socket.id);
                 state.socketRooms.delete(partnerId);
 
                 delete state.pairs[partnerId];
@@ -817,13 +824,15 @@ module.exports = function (io) {
                 const partnerSocket = io.sockets.sockets.get(partnerId);
                 if (partnerSocket) {
                     partnerSocket.emit("partner-left", { reason: "other-next" });
-                    if (!state.paused.has(partnerId) && !state.waiting.includes(partnerId)) state.waiting.push(partnerId);
+                    // Re-queue partner via joinQueue so the pair-guard applies
+                    matchmaking.joinQueue(partnerId);
                 }
             }
-            if (!state.paused.has(socket.id) && !state.waiting.includes(socket.id)) state.waiting.push(socket.id);
-            console.log("User", socket.id, "pressed NEXT. Requeueing if not paused...");
-            matchmaking.tryMatch();
+            console.log("User", socket.id, "pressed NEXT. Requeueing...");
+            // Re-queue self via joinQueue so the pair-guard applies
+            matchmaking.joinQueue(socket.id);
         });
+
 
         socket.on("intentional-disconnect", () => {
             socket.intentionalDisconnect = true;
