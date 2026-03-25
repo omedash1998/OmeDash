@@ -22,6 +22,23 @@ module.exports = function (io) {
     }
 
     io.on("connection", (socket) => {
+        // ── Safely sever an existing pair and notify the old partner ──
+        async function unpairUser(reason) {
+            const partnerId = state.pairs[socket.id];
+            if (!partnerId) return;
+            await endFirestoreRoom(socket.id);
+            state.socketRooms.delete(partnerId);
+            delete state.pairs[partnerId];
+            delete state.pairs[socket.id];
+            const partnerSocket = io.sockets.sockets.get(partnerId);
+            if (partnerSocket) {
+                partnerSocket.emit("partner-left", { reason });
+                if (!state.paused.has(partnerId) && !state.waiting.includes(partnerId)) {
+                    state.waiting.push(partnerId);
+                }
+            }
+        }
+
         if (socket.recovered) {
             console.log("Session recovered for socket", socket.id);
             socket.uid = state.socketUids.get(socket.id);
@@ -271,6 +288,10 @@ module.exports = function (io) {
         socket.on("ready", async () => {
             // Wait for any in-flight set-preferences write to finish first
             if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
+            // If the server still considers this socket paired (e.g. after a page reload
+            // that wiped frontend state but kept the session alive), cleanly sever
+            // the old pair before entering the queue to prevent 3-way connections.
+            await unpairUser("other-reconnected");
             matchmaking.joinQueue(socket.id);
         });
 
@@ -299,6 +320,8 @@ module.exports = function (io) {
             // Wait for any in-flight set-preferences write to finish first
             if (socket._prefsReady) { try { await socket._prefsReady; } catch (_) { } }
             if (state.paused.has(socket.id)) state.paused.delete(socket.id);
+            // Same guard as 'ready': sever any stale pair before rejoining queue
+            await unpairUser("other-resumed");
             matchmaking.joinQueue(socket.id);
         });
 

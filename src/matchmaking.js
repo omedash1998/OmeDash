@@ -108,11 +108,45 @@ async function areGenderCompatible(aUid, bUid) {
 //    only one server pops and pairs two users at a time to prevent double-matching.
 // 3. Store routing information (which server owns which socket) using Redis Pub/Sub
 //    or Socket.io Redis Adapter to emit the "matched" event reliably.
+
+// ── Re-entrancy lock ─────────────────────────────────────────────────────────
+// tryMatch is async and has multiple await points. Without a lock, a second
+// call (triggered by a socket event during an await) could read stale state
+// and produce a 3-way match. The lock queues exactly one re-run after the
+// current pass finishes, which is sufficient for a single-process server.
+let _isMatching = false;
+let _matchPending = false;
+
 async function tryMatch() {
+    if (_isMatching) {
+        _matchPending = true;  // schedule exactly one follow-up pass
+        return;
+    }
+    _isMatching = true;
+    try {
+        await _doMatch();
+    } finally {
+        _isMatching = false;
+        if (_matchPending) {
+            _matchPending = false;
+            tryMatch(); // drain any work that queued up during the lock
+        }
+    }
+}
+
+async function _doMatch() {
     const { waiting, paused, pairs, socketRooms, socketUids } = state;
 
     while (waiting.length >= 2) {
         const aId = waiting.shift();
+
+        // Safety net: if aId somehow ended up in the queue while still paired,
+        // discard it and do NOT end the active room (partner-left would cause chaos).
+        if (pairs[aId]) {
+            console.warn(`[Matchmaking] ${aId} was in queue while already paired — discarding.`);
+            continue;
+        }
+
         // skip if paused or disconnected
         try {
             if (paused.has(aId)) continue;
@@ -281,6 +315,13 @@ async function tryMatch() {
 
 function joinQueue(socketId) {
     if (state.paused.has(socketId)) return;
+    // Hard guard: a paired socket must never enter the waiting queue.
+    // This is a last-resort safety net; the primary prevention is unpairUser()
+    // being called before joinQueue() in the ready/resume handlers.
+    if (state.pairs[socketId]) {
+        console.warn(`[Matchmaking] Blocked ${socketId} from joining queue — still paired.`);
+        return;
+    }
     if (!state.waiting.includes(socketId)) {
         state.waiting.push(socketId);
         module.exports.tryMatch();
