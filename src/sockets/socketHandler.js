@@ -33,9 +33,10 @@ module.exports = function (io) {
             const partnerSocket = io.sockets.sockets.get(partnerId);
             if (partnerSocket) {
                 partnerSocket.emit("partner-left", { reason });
-                if (!state.paused.has(partnerId) && !state.waiting.includes(partnerId)) {
-                    state.waiting.push(partnerId);
-                }
+                // CRITICAL FIX: Do NOT proactively add partner to the waiting queue here.
+                // The client ALWAYS emits `ready` automatically when it processes `partner-left`.
+                // If we queue them here, `tryMatch` can pair them instantly before their frontend
+                // receives `partner-left`, causing their frontend to sever the NEW match.
             }
         }
 
@@ -312,7 +313,7 @@ module.exports = function (io) {
                     if (!state.paused.has(partnerId) && !state.waiting.includes(partnerId)) state.waiting.push(partnerId);
                 }
             }
-            matchmaking.tryMatch();
+
         });
 
         socket.on("resume", async () => {
@@ -824,8 +825,8 @@ module.exports = function (io) {
                 const partnerSocket = io.sockets.sockets.get(partnerId);
                 if (partnerSocket) {
                     partnerSocket.emit("partner-left", { reason: "other-next" });
-                    // Re-queue partner via joinQueue so the pair-guard applies
-                    matchmaking.joinQueue(partnerId);
+                    // CRITICAL FIX: Do NOT call joinQueue(partnerId) here!
+                    // Let the partner's frontend handle it by emitting `ready`.
                 }
             }
             console.log("User", socket.id, "pressed NEXT. Requeueing...");
@@ -861,9 +862,8 @@ module.exports = function (io) {
                     const partnerSocket = io.sockets.sockets.get(finalPartnerId);
                     if (partnerSocket) {
                         partnerSocket.emit("partner-left", { reason: "disconnect" });
-                        if (!state.paused.has(finalPartnerId) && !state.waiting.includes(finalPartnerId)) {
-                            state.waiting.push(finalPartnerId);
-                        }
+                        // CRITICAL FIX: Do NOT proactively add partner to waiting queue here.
+                        // Wait for their frontend to emit `ready` after processing partner-left.
                     }
                 }
                 matchmaking.tryMatch();
