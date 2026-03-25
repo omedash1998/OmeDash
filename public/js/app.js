@@ -521,10 +521,6 @@ async function startAs(roleAssigned) {
 }
 
 function attachSocketHandlers() {
-    // Guard: prevent duplicate handler registration on Socket.IO reconnects
-    if (socket._handlersAttached) return;
-    socket._handlersAttached = true;
-
     socket.on("matched", async ({ role: r, partner, partnerUid: pUid, roomId: matchedRoomId }) => {
         log("matched:", r, partner);
         currentPartner = partner;
@@ -1008,7 +1004,6 @@ function cleanupAfterPartnerLeft() {
     try { if (pc) pc.close(); } catch (e) { }
     pc = null;
     currentPartner = null;
-    currentPartnerUid = null;
     currentRoomId = null;
     remoteVideo.srcObject = null;
     // disable chat UI when no partner is connected
