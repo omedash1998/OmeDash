@@ -137,20 +137,30 @@ async function tryMatch() {
 async function _doMatch() {
     const { waiting, paused, pairs, socketRooms, socketUids } = state;
 
+    // Track IDs that couldn't find a compatible partner this pass.
+    // If the same ID comes back around (it deferred itself to the back of the
+    // queue and reached the front again), stop — they'll be retried on the
+    // next tryMatch call triggered by a new user joining.
+    const skipped = new Set();
+
     while (waiting.length >= 2) {
         const aId = waiting.shift();
 
-        // Safety net: if aId somehow ended up in the queue while still paired,
-        // discard it and do NOT end the active room (partner-left would cause chaos).
+        // Safety net: already paired — discard silently
         if (pairs[aId]) {
             console.warn(`[Matchmaking] ${aId} was in queue while already paired — discarding.`);
             continue;
         }
 
-        // skip if paused or disconnected
-        try {
-            if (paused.has(aId)) continue;
-        } catch (e) { /* ignore */ }
+        // Skip paused
+        if (paused.has(aId)) continue;
+
+        // This user already deferred once this pass — stop here to prevent
+        // an infinite spin. They stay at the back of the queue for next time.
+        if (skipped.has(aId)) {
+            waiting.unshift(aId);
+            break;
+        }
 
         // Find a compatible partner from the queue
         let bId = null;
@@ -181,9 +191,11 @@ async function _doMatch() {
                 }
 
                 if (foundIdx === -1) {
-                    // No compatible partner — put A back at the end and stop this round
+                    // No compatible partner yet — defer A to the back so other
+                    // pairs in the queue can still match. (was: break — that was the bug)
+                    skipped.add(aId);
                     waiting.push(aId);
-                    break;
+                    continue;
                 }
                 bestIdx = foundIdx;
             } else if (bestIdx < 0) {
@@ -200,10 +212,11 @@ async function _doMatch() {
             if (bUid) {
                 const compatible = await areGenderCompatible(aUid, bUid);
                 if (!compatible) {
-                    // B's filter rejects A — skip B, try next candidate
-                    // Put A back and let the loop re-process
+                    // B's filter rejects A — defer A to the back so other
+                    // pairs in the queue can still match. (was: break — that was the bug)
+                    skipped.add(aId);
                     waiting.push(aId);
-                    break;
+                    continue;
                 }
             }
         }
