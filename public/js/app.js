@@ -520,7 +520,11 @@ async function startAs(roleAssigned) {
     }
 }
 
+let _socketHandlersAttached = false;
 function attachSocketHandlers() {
+    if (_socketHandlersAttached) return;
+    _socketHandlersAttached = true;
+
     socket.on("matched", async ({ role: r, partner, partnerUid: pUid, roomId: matchedRoomId }) => {
         log("matched:", r, partner);
         currentPartner = partner;
