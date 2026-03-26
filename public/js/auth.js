@@ -112,6 +112,39 @@ async function detectAndSaveCountry(user, db) {
     }
 }
 
+// Seed edit-profile with Google account name & photo (only if not already set)
+async function seedGoogleProfileIfNeeded(user, userData) {
+    try {
+        const googleName = user.displayName || '';
+        const googlePhoto = user.photoURL || '';
+        if (!googleName && !googlePhoto) return; // nothing to seed
+
+        // Only seed localStorage if no profile saved yet
+        const existing = localStorage.getItem('vchat_profile');
+        if (!existing) {
+            localStorage.setItem('vchat_profile', JSON.stringify({
+                pic: googlePhoto || null,
+                name: googleName || ''
+            }));
+            console.log('Seeded edit-profile from Google account');
+        }
+
+        // Only save to Firestore if displayName/photoURL not already set
+        if (userData && !userData.displayName && !userData.photoURL) {
+            const userRef = doc(db, 'users', user.uid);
+            const updates = {};
+            if (googleName) updates.displayName = googleName;
+            if (googlePhoto) updates.photoURL = googlePhoto;
+            if (Object.keys(updates).length > 0) {
+                await setDoc(userRef, updates, { merge: true });
+                console.log('Saved Google profile info to Firestore');
+            }
+        }
+    } catch (e) {
+        console.warn('seedGoogleProfileIfNeeded failed (non-critical):', e.message);
+    }
+}
+
 // Auth state change handler — orchestrates the full flow
 onAuthStateChanged(auth, async (user) => {
     const loginScreen = document.getElementById('loginScreen');
@@ -147,6 +180,8 @@ onAuthStateChanged(auth, async (user) => {
                 createdAt: serverTimestamp()
             });
             console.log('Created new user document:', user.uid);
+            // Seed profile from Google account for new users
+            try { await seedGoogleProfileIfNeeded(user, null); } catch (_) { }
             // Show onboarding modal
             if (window.showAgeModal) window.showAgeModal();
             return;
@@ -217,6 +252,8 @@ onAuthStateChanged(auth, async (user) => {
             } catch (e) { console.warn('Gender sync failed:', e); }
 
             detectAndSaveCountry(user, db);
+            // Seed profile from Google account (only if not already customized)
+            try { seedGoogleProfileIfNeeded(user, data); } catch (_) { }
         } else {
             // Onboarding not complete — show modal
             console.log('Onboarding incomplete, showing modal for:', user.uid);
