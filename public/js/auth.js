@@ -137,9 +137,6 @@ onAuthStateChanged(auth, async (user) => {
         const userSnap = await getDoc(userRef);
 
         if (!userSnap.exists()) {
-            const displayName = user.displayName || 'User';
-            const photoURL = user.photoURL || null;
-
             // First-time user — create doc with onboardingComplete = false
             await setDoc(userRef, {
                 uid: user.uid,
@@ -147,17 +144,9 @@ onAuthStateChanged(auth, async (user) => {
                 isBanned: false,
                 reputation: 0,
                 onboardingComplete: false,
-                displayName: displayName,
-                photoURL: photoURL,
                 createdAt: serverTimestamp()
             });
             console.log('Created new user document:', user.uid);
-
-            // Initialize local profile so Edit Profile UI shows it immediately
-            try {
-                localStorage.setItem('vchat_profile', JSON.stringify({ name: displayName, pic: photoURL }));
-            } catch (e) { console.warn('localStorage set failed', e); }
-
             // Show onboarding modal
             if (window.showAgeModal) window.showAgeModal();
             return;
@@ -165,26 +154,11 @@ onAuthStateChanged(auth, async (user) => {
 
         const data = userSnap.data();
 
-        // Update lastLogin and potentially sync missing Google profile data
+        // Update lastLogin (non-critical — don't let this crash the auth flow)
         try {
-            const updates = { lastLogin: serverTimestamp() };
-            
-            // If existing user lacks profile info in Firestore, sync from Google
-            if (!data.displayName && user.displayName) updates.displayName = user.displayName;
-            if (!data.photoURL && user.photoURL) updates.photoURL = user.photoURL;
-
-            await setDoc(userRef, updates, { merge: true });
-
-            // Initialize local profile if it's completely missing
-            if (!localStorage.getItem('vchat_profile')) {
-                const profileObj = {
-                    name: data.displayName || user.displayName || 'User',
-                    pic: data.photoURL || user.photoURL || null
-                };
-                localStorage.setItem('vchat_profile', JSON.stringify(profileObj));
-            }
+            await setDoc(userRef, { lastLogin: serverTimestamp() }, { merge: true });
         } catch (e) {
-            console.warn('Failed to update lastLogin or sync profile, continuing:', e.message);
+            console.warn('Failed to update lastLogin, continuing:', e.message);
         }
 
         // ── Ban check on page load ──
