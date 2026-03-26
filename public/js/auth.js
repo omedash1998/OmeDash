@@ -138,26 +138,14 @@ onAuthStateChanged(auth, async (user) => {
 
         if (!userSnap.exists()) {
             // First-time user — create doc with onboardingComplete = false
-            // Also seed Google profile name & photo so Edit Profile is pre-filled
-            const googleName = user.displayName || '';
-            const googlePhoto = user.photoURL || null;
             await setDoc(userRef, {
                 uid: user.uid,
                 isPremium: false,
                 isBanned: false,
                 reputation: 0,
                 onboardingComplete: false,
-                displayName: googleName || 'User',
-                photoURL: googlePhoto,
                 createdAt: serverTimestamp()
             });
-            // Sync to localStorage so Edit Profile modal picks it up
-            try {
-                localStorage.setItem('vchat_profile', JSON.stringify({
-                    pic: googlePhoto,
-                    name: googleName
-                }));
-            } catch (_) { }
             console.log('Created new user document:', user.uid);
             // Show onboarding modal
             if (window.showAgeModal) window.showAgeModal();
@@ -212,28 +200,6 @@ onAuthStateChanged(auth, async (user) => {
             revealApp();
             // Request camera & mic immediately after login
             requestCameraAndMic();
-
-            // Seed Google profile data if user hasn't customized their profile yet
-            try {
-                const hasCustomName = data.displayName && data.displayName !== 'User';
-                if (!hasCustomName) {
-                    const googleName = user.displayName || '';
-                    const googlePhoto = user.photoURL || null;
-                    if (googleName || googlePhoto) {
-                        await setDoc(userRef, {
-                            displayName: googleName || 'User',
-                            photoURL: googlePhoto
-                        }, { merge: true });
-                        try {
-                            localStorage.setItem('vchat_profile', JSON.stringify({
-                                pic: googlePhoto,
-                                name: googleName
-                            }));
-                        } catch (_) { }
-                        console.log('Seeded Google profile data for returning user');
-                    }
-                }
-            } catch (e) { console.warn('Google profile seed failed:', e); }
 
             // Sync "Your Gender" dropdown with the gender stored in Firestore
             try {
