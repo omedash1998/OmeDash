@@ -1765,6 +1765,34 @@ async function renderHistoryList() {
                         chatBox.style.display = 'none';
                         textBtn.style.display = '';
 
+                        // Optimistically update Messages tab if box exists
+                        try {
+                            const list = document.getElementById('messageList');
+                            if (list) {
+                                const emptyEl = list.querySelector('.history-empty');
+                                if (emptyEl) emptyEl.remove();
+
+                                const existingBox = list.querySelector('.conv-box[data-partner-uid="' + cPartnerUid + '"]') 
+                                    || list.querySelector('.conv-box[data-partner-id="' + cPartnerUid + '"]');
+                                if (existingBox) {
+                                    const bdy = existingBox.querySelector('.conv-body');
+                                    if (bdy) {
+                                        const r = document.createElement('div'); r.className = 'msg-row msg-row-out';
+                                        const msgBub = document.createElement('div'); msgBub.className = 'message-bubble message-out';
+                                        msgBub.textContent = txt;
+                                        r.appendChild(msgBub); bdy.appendChild(r);
+                                        if (bdy.classList.contains('open')) requestAnimationFrame(() => { bdy.scrollTop = bdy.scrollHeight; });
+                                    }
+                                    const sb = existingBox.querySelector('.conv-sub');
+                                    if (sb) sb.textContent = new Date().toLocaleString() + ' \u2014 You: ' + (txt.length > 40 ? txt.slice(0, 40) + '...' : txt);
+                                    
+                                    if (list.firstChild !== existingBox) list.insertBefore(existingBox, list.firstChild);
+                                } else {
+                                    renderMessagesList(true);
+                                }
+                            }
+                        } catch(err) { console.warn('Optimistic update failed', err); }
+
                         // Show brief sent ack
                         const ack = document.createElement('div');
                         ack.style.fontSize = '12px';
