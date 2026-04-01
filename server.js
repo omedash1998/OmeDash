@@ -158,7 +158,7 @@ app.post('/create-checkout-session', async (req, res) => {
       payment_method_types: ['card'],
       line_items: [
         {
-          price: 'price_1T6FOiGy0ngDBwXQwiHWPiOc',
+          price: 'price_1SvosiGu1VyNmGfhiL6qRQUu',
           quantity: 1,
         },
       ],
@@ -238,11 +238,7 @@ app.post('/create-unban-session', async (req, res) => {
       payment_method_types: ['card'],
       line_items: [
         {
-          price_data: {
-            currency: 'usd',
-            product_data: { name: 'Account Unban — OmeDash' },
-            unit_amount: 799, // $7.99
-          },
+          price: 'price_1T6EpSGu1VyNmGfh0SU02yPx',
           quantity: 1,
         },
       ],
