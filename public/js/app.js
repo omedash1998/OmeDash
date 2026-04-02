@@ -2365,9 +2365,17 @@ if (subscribeBtn) {
                 }
             });
             const data = await res.json();
-            window.location.href = data.url;
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                console.error('Stripe error:', data.error);
+                if (typeof showToast === 'function') showToast('Payment error. Make sure your server is deployed!');
+                if (subscribeBtn) subscribeBtn.disabled = false;
+            }
         } catch (err) {
             console.error('Checkout session failed', err);
+            if (typeof showToast === 'function') showToast('Payment error. Try again.');
+            if (subscribeBtn) subscribeBtn.disabled = false;
         }
     });
 }
