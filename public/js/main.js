@@ -1411,8 +1411,8 @@ async function renderHistoryList() {
             const participantProfiles = data.participantProfiles || {};
             const deletedFor = data.deletedFor || {};
 
-            // Skip if conversation is soft-deleted for current user (boolean or timestamp)
-            if (deletedFor[uid]) continue;
+            // Skip if conversation is soft-deleted for current user
+            if (deletedFor[uid] === true) continue;
 
             // Find partner UID
             const partnerUid = participants.find(p => p !== uid);
