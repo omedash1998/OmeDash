@@ -675,10 +675,23 @@ module.exports = function (io) {
                     });
 
                 // Update conversation doc so real-time listener triggers UI refresh
-                await fireDb.collection('conversations').doc(conversationId).update({
+                const updateData = {
                     lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
                     lastMessageText: text
-                });
+                };
+
+                // If the conversation was previously deleted by either user, un-delete it so they can see the new message
+                const convData = conversationDoc.data();
+                if (convData.deletedFor) {
+                    if (convData.deletedFor[recipientUid]) {
+                        updateData[`deletedFor.${recipientUid}`] = admin.firestore.FieldValue.delete();
+                    }
+                    if (convData.deletedFor[senderUid]) {
+                        updateData[`deletedFor.${senderUid}`] = admin.firestore.FieldValue.delete();
+                    }
+                }
+
+                await fireDb.collection('conversations').doc(conversationId).update(updateData);
 
                 console.log('✓ Message saved:', conversationId, messageRef.id);
 
@@ -745,64 +758,6 @@ module.exports = function (io) {
             }
         });
 
-        socket.on('clear-history', async () => {
-            try {
-                const uid = socket.uid || state.socketUids.get(socket.id);
-                if (!uid) {
-                    socket.emit('history-error', { message: 'Not authenticated' });
-                    return;
-                }
-
-                console.log('Clear history requested by:', uid);
-
-                const snapshot = await fireDb.collection('conversations')
-                    .where('participants', 'array-contains', uid)
-                    .get();
-
-                if (snapshot.empty) {
-                    console.log('No conversations to clear for:', uid);
-                    socket.emit('history-cleared');
-                    return;
-                }
-
-                const batch = fireDb.batch();
-                snapshot.docs.forEach(doc => {
-                    batch.update(doc.ref, {
-                        [`deletedFor.${uid}`]: true
-                    });
-                });
-
-                await batch.commit();
-                console.log('✓ Soft deleted', snapshot.docs.length, 'conversations for:', uid);
-
-                // Delete all messages in these conversations
-                for (const doc of snapshot.docs) {
-                    const conversationId = doc.id;
-                    try {
-                        const messagesSnap = await fireDb.collection('conversations').doc(conversationId)
-                            .collection('messages')
-                            .get();
-
-                        if (!messagesSnap.empty) {
-                            const messageBatch = fireDb.batch();
-                            messagesSnap.docs.forEach(msgDoc => {
-                                messageBatch.delete(msgDoc.ref);
-                            });
-                            await messageBatch.commit();
-                            console.log('✓ Deleted', messagesSnap.docs.length, 'messages from:', conversationId);
-                        }
-                    } catch (msgErr) {
-                        console.error('Error deleting messages for conversation:', conversationId, msgErr);
-                    }
-                }
-
-                socket.emit('history-cleared');
-
-            } catch (err) {
-                console.error('Clear history failed:', err);
-                socket.emit('history-error', { message: 'Failed to clear history' });
-            }
-        });
 
         socket.on("next", async () => {
             // NOTE: do NOT set socket.intentionalDisconnect here — "next" does NOT
