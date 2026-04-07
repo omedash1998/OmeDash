@@ -736,7 +736,7 @@ module.exports = function (io) {
                 const participants = convSnap.data().participants || [];
                 if (!participants.includes(uid)) { socket.emit('message-error', { message: 'Not a participant' }); return; }
 
-                await convRef.update({ [`deletedFor.${uid}`]: true });
+                await convRef.update({ [`deletedFor.${uid}`]: admin.firestore.FieldValue.serverTimestamp() });
                 console.log('✓ Soft deleted conversation', conversationId, 'for', uid);
                 socket.emit('conversation-deleted', { conversationId });
             } catch (e) {
@@ -768,33 +768,12 @@ module.exports = function (io) {
                 const batch = fireDb.batch();
                 snapshot.docs.forEach(doc => {
                     batch.update(doc.ref, {
-                        [`deletedFor.${uid}`]: true
+                        [`deletedFor.${uid}`]: admin.firestore.FieldValue.serverTimestamp()
                     });
                 });
 
                 await batch.commit();
                 console.log('✓ Soft deleted', snapshot.docs.length, 'conversations for:', uid);
-
-                // Delete all messages in these conversations
-                for (const doc of snapshot.docs) {
-                    const conversationId = doc.id;
-                    try {
-                        const messagesSnap = await fireDb.collection('conversations').doc(conversationId)
-                            .collection('messages')
-                            .get();
-
-                        if (!messagesSnap.empty) {
-                            const messageBatch = fireDb.batch();
-                            messagesSnap.docs.forEach(msgDoc => {
-                                messageBatch.delete(msgDoc.ref);
-                            });
-                            await messageBatch.commit();
-                            console.log('✓ Deleted', messagesSnap.docs.length, 'messages from:', conversationId);
-                        }
-                    } catch (msgErr) {
-                        console.error('Error deleting messages for conversation:', conversationId, msgErr);
-                    }
-                }
 
                 socket.emit('history-cleared');
 
