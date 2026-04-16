@@ -9,7 +9,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#e6f7ff">
-    <title>OmeDash</title>
+    <title>OmeDash — Free Random Video Chat | Talk to Strangers Online</title>
+    <meta name="description" content="OmeDash is a free random video chat platform. Meet strangers online instantly — no signup needed. A modern Omegle alternative with fast connections and global users.">
 
     <meta name="google-site-verification" content="VqHYrgCsrkgZOV_z3Zuj7urgGMZYD-Kog2mQ1ZnZdYA" />
 
@@ -19,38 +20,155 @@
 </head>
 
 <body>
-
     <!-- ========== AUTHENTICATION CONTAINER ========== -->
     <!-- Login Screen (shown first) -->
     <div id="loginScreen">
-        <div class="login-card">
-            <div class="login-header">
-                <img src="omedash-logo.png" alt="OmeDash" onerror="this.style.display='none'">
-                <h2>Welcome to OmeDash</h2>
-                <p>Sign in to get started</p>
-            </div>
-            <div class="login-body">
-                <p>Connect with people around the world through live video chat. Sign in with your Google account to
-                    continue.</p>
-                <button id="googleSignInBtn" type="button">
-                    <span class="google-icon">
-                        <svg viewBox="0 0 24 24">
-                            <path fill="#4285F4"
-                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-                            <path fill="#34A853"
-                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                            <path fill="#FBBC05"
-                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                            <path fill="#EA4335"
-                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                        </svg>
-                    </span>
-                    Sign in with Google
-                </button>
-                <p style="font-size:12px;color:#94a8c0;">By signing in, you agree to our Terms of Service and Privacy
-                    Policy.</p>
+        <div class="login-hero">
+            <div class="login-card">
+                <div class="login-header">
+                    <img src="omedash-logo.png" alt="OmeDash" onerror="this.style.display='none'">
+                    <h2>Welcome to OmeDash</h2>
+                    <p>Sign in to get started</p>
+                </div>
+                <div class="login-body">
+                    <p>Connect with people around the world through live video chat. Sign in with your Google account to
+                        continue.</p>
+                    <button id="googleSignInBtn" type="button">
+                        <span class="google-icon">
+                            <svg viewBox="0 0 24 24">
+                                <path fill="#4285F4"
+                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                                <path fill="#34A853"
+                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                <path fill="#FBBC05"
+                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                                <path fill="#EA4335"
+                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                            </svg>
+                        </span>
+                        Sign in with Google
+                    </button>
+                    <p style="font-size:12px;color:#94a8c0;">By signing in, you agree to our Terms of Service and Privacy
+                        Policy.</p>
+                </div>
             </div>
         </div>
+
+        <!-- ========== SEO LANDING CONTENT ========== -->
+        <section id="seoLanding" class="seo-landing">
+
+            <article class="seo-container">
+
+                <!-- Intro paragraph -->
+                <section class="seo-section" id="seo-intro">
+                    <h1>OmeDash — Free Random Video Chat</h1>
+                    <p>OmeDash is a free random video chat platform that lets you talk to strangers online with just one click. Whether you want to meet new people, practice a language, or simply have a fun conversation, OmeDash connects you with real users from around the world in seconds. No downloads, no signup — just press Start and begin your next video chat. It’s the easiest way to meet strangers and make new friends online.</p>
+                </section>
+
+                <!-- How It Works -->
+                <section class="seo-section" id="seo-how-it-works">
+                    <h2>How It Works</h2>
+                    <ol class="seo-steps">
+                        <li>
+                            <span class="step-number">1</span>
+                            <div>
+                                <strong>Sign In</strong>
+                                <p>Use your Google account for quick, secure access.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="step-number">2</span>
+                            <div>
+                                <strong>Set Your Preferences</strong>
+                                <p>Choose your gender and who you’d like to chat with.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="step-number">3</span>
+                            <div>
+                                <strong>Press Start</strong>
+                                <p>Get matched with a random stranger for a live video chat.</p>
+                            </div>
+                        </li>
+                        <li>
+                            <span class="step-number">4</span>
+                            <div>
+                                <strong>Next or Stay</strong>
+                                <p>Enjoyed the conversation? Keep chatting. Ready for someone new? Hit Next.</p>
+                            </div>
+                        </li>
+                    </ol>
+                </section>
+
+                <!-- Features / Benefits -->
+                <section class="seo-section" id="seo-features">
+                    <h2>Why Choose OmeDash?</h2>
+                    <ul class="seo-features-grid">
+                        <li>
+                            <span class="feature-icon">⚡</span>
+                            <strong>Instant Connection</strong>
+                            <p>Get matched in seconds. No waiting rooms, no delays.</p>
+                        </li>
+                        <li>
+                            <span class="feature-icon">🌍</span>
+                            <strong>Global Users</strong>
+                            <p>Chat with people from over 190 countries worldwide.</p>
+                        </li>
+                        <li>
+                            <span class="feature-icon">🔒</span>
+                            <strong>Privacy First</strong>
+                            <p>Your conversations are private. We don’t store video or audio.</p>
+                        </li>
+                        <li>
+                            <span class="feature-icon">🆓</span>
+                            <strong>100% Free</strong>
+                            <p>Use OmeDash for free. No hidden fees to start chatting.</p>
+                        </li>
+                    </ul>
+                </section>
+
+                <!-- Safety -->
+                <section class="seo-section" id="seo-safety">
+                    <h2>Your Safety Matters</h2>
+                    <p>OmeDash takes user safety seriously. Our platform includes a built-in reporting system that lets you flag inappropriate behavior instantly. Users who violate community guidelines are subject to temporary or permanent bans. You are always in control — skip any conversation at any time. We encourage respectful interactions and maintain a moderated environment so everyone can enjoy video chat online safely.</p>
+                </section>
+
+                <!-- Omegle Alternative -->
+                <section class="seo-section" id="seo-alternative">
+                    <h2>A Modern Omegle Alternative</h2>
+                    <p>Looking for an Omegle alternative? OmeDash offers a similar experience — random video chat with strangers — but with a cleaner interface, faster matching, and better moderation. Whether you used Omegle before or you’re new to random video chat, OmeDash is designed to give you the best way to meet strangers online in a safe, modern environment.</p>
+                </section>
+
+                <!-- FAQ -->
+                <section class="seo-section" id="seo-faq">
+                    <h2>Frequently Asked Questions</h2>
+                    <dl class="seo-faq-list">
+                        <div class="faq-item">
+                            <dt>Is OmeDash free to use?</dt>
+                            <dd>Yes. OmeDash is completely free. You can start a random video chat without paying anything. Optional premium features are available for users who want more control over their experience.</dd>
+                        </div>
+                        <div class="faq-item">
+                            <dt>Do I need to sign up?</dt>
+                            <dd>You only need a Google account to sign in — no lengthy registration forms, no email confirmation. It takes seconds to get started.</dd>
+                        </div>
+                        <div class="faq-item">
+                            <dt>Is it safe to use?</dt>
+                            <dd>OmeDash has an active moderation system and a one-click report feature. Users who violate the rules are banned. You can skip any chat at any time.</dd>
+                        </div>
+                        <div class="faq-item">
+                            <dt>How fast is the connection?</dt>
+                            <dd>Most users get matched within seconds. OmeDash uses WebRTC for peer-to-peer video, which means low latency and high-quality video chat online.</dd>
+                        </div>
+                    </dl>
+                </section>
+
+            </article>
+
+            <footer class="seo-footer">
+                <p>&copy; 2025 OmeDash. All rights reserved.</p>
+            </footer>
+
+        </section>
     </div>
 
     <!-- ========== VIDEO CHAT MAIN CONTAINER ========== -->

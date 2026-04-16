@@ -34,8 +34,9 @@ body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 50%, #e8f4fe 100%);
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
+    flex-wrap: wrap;
     padding: 16px;
     padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     gap: 18px;
@@ -48,6 +49,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    height: calc(100vh - 32px);
 }
 
 /* ===== VIDEO AREA ===== */
@@ -2849,15 +2851,264 @@ body {
     }
 }
 
+/* ===== SEO LANDING SECTION ===== */
+.seo-landing {
+    width: 100%;
+    flex-basis: 100%;
+    background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 20%, #ffffff 80%, #f0f9ff 100%);
+    border-top: 1px solid rgba(59, 130, 246, 0.1);
+}
+
+.seo-container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 60px 24px 40px;
+}
+
+.seo-section {
+    margin-bottom: 48px;
+}
+
+.seo-section:last-child {
+    margin-bottom: 0;
+}
+
+.seo-section h1 {
+    font-size: 28px;
+    font-weight: 800;
+    color: #083e6a;
+    margin: 0 0 16px;
+    letter-spacing: -0.3px;
+    line-height: 1.3;
+}
+
+.seo-section h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #083e6a;
+    margin: 0 0 16px;
+    letter-spacing: -0.2px;
+}
+
+.seo-section > p {
+    font-size: 15px;
+    line-height: 1.7;
+    color: #4b6a86;
+    margin: 0;
+}
+
+/* How It Works — Steps */
+.seo-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.seo-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 18px 20px;
+    background: linear-gradient(165deg, #f8fbff 0%, #f0f7ff 100%);
+    border-radius: 14px;
+    border: 1px solid rgba(59, 130, 246, 0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.seo-steps li:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(3, 102, 214, 0.08);
+}
+
+.step-number {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0066dd 0%, #3b82f6 100%);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+    border-radius: 10px;
+    box-shadow: 0 3px 10px rgba(59, 130, 246, 0.25);
+}
+
+.seo-steps li strong {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: #083e6a;
+    margin-bottom: 2px;
+}
+
+.seo-steps li p {
+    margin: 0;
+    font-size: 14px;
+    color: #4b6a86;
+    line-height: 1.5;
+}
+
+/* Features Grid */
+.seo-features-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.seo-features-grid li {
+    padding: 22px 20px;
+    background: linear-gradient(165deg, #f8fbff 0%, #f0f7ff 100%);
+    border-radius: 14px;
+    border: 1px solid rgba(59, 130, 246, 0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.seo-features-grid li:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(3, 102, 214, 0.08);
+}
+
+.feature-icon {
+    display: block;
+    font-size: 26px;
+    margin-bottom: 10px;
+}
+
+.seo-features-grid li strong {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: #083e6a;
+    margin-bottom: 4px;
+}
+
+.seo-features-grid li p {
+    margin: 0;
+    font-size: 14px;
+    color: #4b6a86;
+    line-height: 1.5;
+}
+
+/* FAQ */
+.seo-faq-list {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.faq-item {
+    padding: 20px;
+    background: linear-gradient(165deg, #f8fbff 0%, #f0f7ff 100%);
+    border-radius: 14px;
+    border: 1px solid rgba(59, 130, 246, 0.08);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.faq-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(3, 102, 214, 0.08);
+}
+
+.faq-item dt {
+    font-size: 15px;
+    font-weight: 700;
+    color: #083e6a;
+    margin: 0 0 8px;
+}
+
+.faq-item dd {
+    margin: 0;
+    font-size: 14px;
+    color: #4b6a86;
+    line-height: 1.6;
+}
+
+/* SEO Footer */
+.seo-footer {
+    text-align: center;
+    padding: 24px;
+    border-top: 1px solid rgba(59, 130, 246, 0.08);
+}
+
+.seo-footer p {
+    margin: 0;
+    font-size: 13px;
+    color: #94a8c0;
+    font-weight: 500;
+}
+
+/* Mobile SEO responsive */
+@media (max-width: 600px) {
+    .seo-container {
+        padding: 40px 16px 32px;
+    }
+
+    .seo-section {
+        margin-bottom: 36px;
+    }
+
+    .seo-section h1 {
+        font-size: 22px;
+    }
+
+    .seo-section h2 {
+        font-size: 18px;
+    }
+
+    .seo-section > p {
+        font-size: 14px;
+    }
+
+    .seo-features-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .seo-steps li {
+        padding: 14px 16px;
+    }
+
+    .step-number {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+    }
+
+    .faq-item {
+        padding: 16px;
+    }
+
+    .seo-footer {
+        padding: 20px 16px;
+    }
+}
+
 /* ===== LOGIN SCREEN ===== */
 #loginScreen {
     position: fixed;
     inset: 0;
     z-index: 10000;
     display: flex;
+    flex-direction: column;
+    background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 50%, #e8f4fe 100%);
+    overflow-y: auto;
+}
+
+.login-hero {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #e6f7ff 0%, #f0f9ff 50%, #e8f4fe 100%);
+    flex-shrink: 0;
 }
 
 .login-card {
