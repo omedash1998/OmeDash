@@ -1154,7 +1154,24 @@ async function renderMessagesList(force) {
 
         // ── Group conversations by partner UID ──
         const partnerGroups = new Map(); // partnerUid -> { convIds, msgs, displayName, photoURL, latestConvId }
-        for (const convDoc of sortedDocs) {
+
+        // Fetch messages for all conversations concurrently to fix N+1 query issue
+        const fetchPromises = sortedDocs.map(async (convDoc) => {
+            const conversationId = convDoc.id;
+            try {
+                const msgsRef = collection(db, 'conversations', conversationId, 'messages');
+                const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
+                const msgsSnapshot = await getDocs(msgsQuery);
+                return { convDoc, msgsSnapshot };
+            } catch (e) {
+                console.warn('Error fetching messages for', conversationId, e);
+                return { convDoc, msgsSnapshot: { empty: true, docs: [] } };
+            }
+        });
+
+        const convResults = await Promise.all(fetchPromises);
+
+        for (const { convDoc, msgsSnapshot } of convResults) {
             const convData = convDoc.data();
             const conversationId = convDoc.id;
             const participants = convData.participants || [];
@@ -1172,12 +1189,6 @@ async function renderMessagesList(force) {
             const partnerUid = participants.find(p => p !== uid);
             if (!partnerUid) continue;
 
-            let msgsSnapshot = { empty: true, docs: [] };
-            try {
-                const msgsRef = collection(db, 'conversations', conversationId, 'messages');
-                const msgsQuery = query(msgsRef, orderBy('createdAt', 'asc'));
-                msgsSnapshot = await getDocs(msgsQuery);
-            } catch (e) { console.warn('Error fetching messages for', conversationId, e); }
             if (msgsSnapshot.empty) continue;
 
             const msgs = msgsSnapshot.docs.map(md => {
