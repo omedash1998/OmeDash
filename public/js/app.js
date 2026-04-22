@@ -526,6 +526,12 @@ function attachSocketHandlers() {
     _socketHandlersAttached = true;
 
     socket.on("matched", async ({ role: r, partner, partnerUid: pUid, roomId: matchedRoomId }) => {
+        // ── Guard: reject match if user has already paused ──
+        if (isPaused) {
+            log("Ignoring match — user is paused, re-sending pause to server");
+            socket.emit("pause");
+            return;
+        }
         log("matched:", r, partner);
         currentPartner = partner;
         currentPartnerUid = pUid || null; // UID of partner for reporting

@@ -298,15 +298,20 @@ module.exports = function (io) {
 
         socket.on("pause", async () => {
             console.log("User paused", socket.id);
+            // Mark paused and leave queue FIRST (synchronous) to minimise the
+            // race window where tryMatch could still pick this socket.
             state.paused.add(socket.id);
             matchmaking.leaveQueue(socket.id);
+
             const partnerId = state.pairs[socket.id];
             if (partnerId) {
+                // Sever pair synchronously before any async work
+                delete state.pairs[partnerId];
+                delete state.pairs[socket.id];
+
                 await endFirestoreRoom(socket.id);
                 state.socketRooms.delete(partnerId);
 
-                delete state.pairs[partnerId];
-                delete state.pairs[socket.id];
                 const partnerSocket = io.sockets.sockets.get(partnerId);
                 if (partnerSocket) {
                     partnerSocket.emit("partner-left", { reason: "other-paused" });

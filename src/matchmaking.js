@@ -240,6 +240,14 @@ async function _doMatch() {
             continue;
         }
 
+        // Final paused guard: a pause event may have arrived during the async
+        // awaits above (gender checks, premium scoring). Re-check both users.
+        if (paused.has(aId) || paused.has(bId)) {
+            if (!paused.has(aId)) waiting.unshift(aId);
+            if (!paused.has(bId)) waiting.unshift(bId);
+            continue;
+        }
+
         pairs[aId] = bId;
         pairs[bId] = aId;
 

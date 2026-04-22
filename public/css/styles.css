@@ -89,6 +89,7 @@ h2 {
 video {
     flex: 1;
     width: 100%;
+    height: 100%;
     background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
     border-radius: 14px;
     object-fit: cover;
@@ -2037,8 +2038,8 @@ body {
     display: none;
 }
 
-/* ===== PHONE VERSION (max-width: 600px) - Touch Only ===== */
-@media (max-width: 600px) and (pointer: coarse) {
+/* ===== MOBILE / TOUCH VERSION — catches phones even with "Request Desktop Site" ===== */
+@media (max-width: 1024px) and (pointer: coarse) {
     body {
         flex-direction: column;
         padding: 0;
@@ -2092,10 +2093,8 @@ body {
     }
 
     #videos>div {
-        flex: 1 1 50%;
+        flex: 1;
         min-height: 0;
-        max-height: 50%;
-        height: 50%;
     }
 
     /* Swap video order: partner on top, local on bottom */
