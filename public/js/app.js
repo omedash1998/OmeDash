@@ -1635,10 +1635,12 @@ async function renderHistoryList() {
 
         if (snapshot.empty) {
             list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-icon"\u003e🤝\u003c/div\u003e\u003cdiv class="history-empty-text"\u003eNo connections yet\u003c/div\u003e\u003cdiv style="font-size:12px;color:#94a8c0;"\u003eStay connected for 10+ seconds to save\u003c/div\u003e\u003c/div\u003e';
+            try { const cb = document.getElementById('clearHistoryBtn'); if (cb) cb.disabled = true; } catch(e){}
             return;
         }
 
         list.innerHTML = '';
+        let hasVisibleHistory = false;
 
         for (const docSnap of snapshot.docs) {
             const data = docSnap.data();
@@ -1649,6 +1651,8 @@ async function renderHistoryList() {
 
             // Skip if connection history is cleared for current user
             if (historyDeleted[uid]) continue;
+
+            hasVisibleHistory = true;
 
             // Find partner UID
             const partnerUid = participants.find(p => p !== uid);
@@ -1832,6 +1836,8 @@ async function renderHistoryList() {
             item.appendChild(chatBox);
             list.appendChild(item);
         }
+
+        try { const cb = document.getElementById('clearHistoryBtn'); if (cb) cb.disabled = !hasVisibleHistory; } catch(e){}
     } catch (err) {
         console.error('Error loading conversations:', err);
         list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-text"\u003eError loading history\u003c/div\u003e\u003c/div\u003e';
@@ -1855,8 +1861,7 @@ function openHistoryModal() {
     try {
         const clearBtn = document.getElementById('clearHistoryBtn');
         if (clearBtn) {
-            const arr = loadHistory();
-            clearBtn.disabled = !arr || arr.length === 0;
+            clearBtn.disabled = true; // Will be re-enabled by renderHistoryList if there are results
         }
     } catch (e) { }
 
@@ -1930,10 +1935,10 @@ async function doClearHistory() {
         if (!db) { showToast('Database not ready'); closeClearHistoryConfirm(); return; }
 
         // Soft-delete connections only (separate field from Messages' deletedFor)
-        const { doc: fbDocFn, updateDoc: fbUpdateDocFn, serverTimestamp: fbServerTs } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
-        const conversationsRef = collection(db, 'conversations');
-        const q = query(conversationsRef, where('participants', 'array-contains', user.uid));
-        const snap = await getDocs(q);
+        const { doc: fbDocFn, updateDoc: fbUpdateDocFn, serverTimestamp: fbServerTs, collection: fbCollection, query: fbQuery, where: fbWhere, getDocs: fbGetDocs } = await import("https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js");
+        const conversationsRef = fbCollection(db, 'conversations');
+        const q = fbQuery(conversationsRef, fbWhere('participants', 'array-contains', user.uid));
+        const snap = await fbGetDocs(q);
         const promises = snap.docs.map(d =>
             fbUpdateDocFn(fbDocFn(db, 'conversations', d.id), { [`historyDeletedFor.${user.uid}`]: true })
         );
@@ -1979,7 +1984,7 @@ function activateConnections() {
     try {
         if (clearHistoryBtn) {
             clearHistoryBtn.style.display = '';
-            clearHistoryBtn.disabled = false;
+            clearHistoryBtn.disabled = !(hl && hl.querySelectorAll('.history-item').length > 0);
         }
     } catch (e) { }
 }

@@ -1403,6 +1403,7 @@ async function renderHistoryList() {
         }
 
         list.innerHTML = '';
+        let hasVisibleHistory = false;
 
         for (const docSnap of snapshot.docs) {
             const data = docSnap.data();
@@ -1410,9 +1411,12 @@ async function renderHistoryList() {
             const participants = data.participants || [];
             const participantProfiles = data.participantProfiles || {};
             const deletedFor = data.deletedFor || {};
+            const historyDeleted = data.historyDeletedFor || {};
 
-            // Skip if conversation is soft-deleted for current user
-            if (deletedFor[uid] === true) continue;
+            // Skip if conversation is soft-deleted or history cleared for current user
+            if (deletedFor[uid] === true || historyDeleted[uid] === true) continue;
+
+            hasVisibleHistory = true;
 
             // Find partner UID
             const partnerUid = participants.find(p => p !== uid);
@@ -1612,6 +1616,8 @@ async function renderHistoryList() {
             item.appendChild(chatBox);
             list.appendChild(item);
         }
+
+        try { const cb = document.getElementById('clearHistoryBtn'); if (cb) cb.disabled = !hasVisibleHistory; } catch(e){}
     } catch (err) {
         console.error('Error loading conversations:', err);
         list.innerHTML = '\u003cdiv class="history-empty"\u003e\u003cdiv class="history-empty-text"\u003eError loading history\u003c/div\u003e\u003c/div\u003e';
@@ -1635,8 +1641,7 @@ function openHistoryModal() {
     try {
         const clearBtn = document.getElementById('clearHistoryBtn');
         if (clearBtn) {
-            const arr = loadHistory();
-            clearBtn.disabled = !arr || arr.length === 0;
+            clearBtn.disabled = true; // Will be re-enabled by renderHistoryList if there are results
         }
     } catch (e) { }
 
@@ -1733,7 +1738,7 @@ function activateConnections() {
     try {
         if (clearHistoryBtn) {
             clearHistoryBtn.style.display = '';
-            clearHistoryBtn.disabled = false;
+            clearHistoryBtn.disabled = !(hl && hl.querySelectorAll('.history-item').length > 0);
         }
     } catch (e) { }
 }

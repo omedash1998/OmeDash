@@ -862,10 +862,18 @@ video {
     transition: all 0.2s ease;
 }
 
-.btn-ghost:hover {
+.btn-ghost:hover:not(:disabled) {
     background: linear-gradient(135deg, #0066dd 0%, #3b82f6 100%);
     border-color: #3b82f6;
     color: #fff;
+}
+
+.btn-ghost:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.4);
+    border-color: rgba(3, 102, 214, 0.1);
+    color: #94a8c0;
 }
 
 .btn-primary {
