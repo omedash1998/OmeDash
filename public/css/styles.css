@@ -2052,8 +2052,7 @@ body {
         flex-direction: column;
         padding: 0;
         gap: 0;
-        height: 100%;
-        min-height: 100vh;
+        height: 100dvh;
         min-height: 100dvh;
         /* dynamic viewport for mobile browsers */
         overflow-x: hidden;
@@ -2093,10 +2092,7 @@ body {
         gap: 0;
         padding: 0;
         border-radius: 0;
-        height: 100vh;
         height: 100dvh;
-        max-height: none;
-        min-height: none;
         background: #000;
     }
 
@@ -2815,16 +2811,6 @@ body {
 
 /* Extra small phones (max-width: 380px) */
 @media (max-width: 380px) {
-    body {
-        padding: 6px;
-        gap: 6px;
-    }
-
-    #videos {
-        min-height: 240px;
-        max-height: 40vh;
-        padding: 6px;
-    }
 
     #chatLog {
         height: 80px;
